@@ -1,4 +1,4 @@
-import { Plus, MessageSquare, Trash2, PanelLeftClose, Settings } from 'lucide-react';
+import { Plus, MessageSquare, Trash2, PanelLeftClose, Settings, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ChatSession } from '@/types/chat';
@@ -14,6 +14,7 @@ interface ChatSidebarProps {
   onClose: () => void;
   onOpenAdmin: () => void;
   isOpen: boolean;
+  isAdmin?: boolean;
 }
 
 export function ChatSidebar({
@@ -25,6 +26,7 @@ export function ChatSidebar({
   onClose,
   onOpenAdmin,
   isOpen,
+  isAdmin = true, // Default to true for now, will be controlled by auth later
 }: ChatSidebarProps) {
   const todaySessions = sessions.filter((s) => {
     const today = new Date();
@@ -90,66 +92,82 @@ export function ChatSidebar({
   };
 
   return (
-    <div
-      className={cn(
-        'flex flex-col h-full bg-sidebar border-r border-sidebar-border transition-all duration-300',
-        isOpen ? 'w-64' : 'w-0 overflow-hidden'
-      )}
-    >
-      {/* Header */}
-      <div className="flex items-center justify-between p-3 border-b border-sidebar-border">
-        <div className="flex items-center gap-2">
-          <JupiterBrainsLogo className="w-7 h-7 text-sidebar-foreground" />
-          <span className="font-semibold text-sidebar-foreground">JupiterBrains</span>
-        </div>
-        <Button
-          variant="ghost"
-          size="icon"
+    <>
+      {/* Overlay backdrop for mobile */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 md:hidden"
           onClick={onClose}
-          className="h-8 w-8 text-sidebar-foreground hover:bg-sidebar-accent"
-        >
-          <PanelLeftClose className="h-4 w-4" />
-        </Button>
-      </div>
+        />
+      )}
 
-      {/* New Chat Button */}
-      <div className="p-3">
-        <Button
-          onClick={onNewChat}
-          variant="outline"
-          className="w-full justify-start gap-2 bg-transparent border-sidebar-border text-sidebar-foreground hover:bg-sidebar-accent"
-        >
-          <Plus className="h-4 w-4" />
-          New Chat
-        </Button>
-      </div>
+      {/* Sidebar */}
+      <div
+        className={cn(
+          'flex flex-col h-full bg-sidebar border-r border-sidebar-border transition-all duration-300 z-50',
+          // Mobile: fixed overlay
+          'fixed md:relative',
+          isOpen ? 'w-64 translate-x-0' : 'w-0 -translate-x-full md:translate-x-0 md:w-0 overflow-hidden'
+        )}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between p-3 border-b border-sidebar-border">
+          <div className="flex items-center gap-2">
+            <JupiterBrainsLogo className="w-7 h-7 text-sidebar-foreground" />
+            <span className="font-semibold text-sidebar-foreground">JupiterBrains</span>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onClose}
+            className="h-8 w-8 text-sidebar-foreground hover:bg-sidebar-accent"
+          >
+            <X className="h-4 w-4 md:hidden" />
+            <PanelLeftClose className="h-4 w-4 hidden md:block" />
+          </Button>
+        </div>
 
-      {/* Chat History */}
-      <ScrollArea className="flex-1 px-2 scrollbar-thin">
-        <SessionGroup title="Today" items={todaySessions} />
-        <SessionGroup title="Yesterday" items={yesterdaySessions} />
-        <SessionGroup title="Previous" items={olderSessions} />
-        
-        {sessions.length === 0 && (
-          <div className="px-3 py-8 text-center text-sm text-muted-foreground">
-            No chat history yet.
-            <br />
-            Start a new conversation!
+        {/* New Chat Button */}
+        <div className="p-3">
+          <Button
+            onClick={onNewChat}
+            variant="outline"
+            className="w-full justify-start gap-2 bg-transparent border-sidebar-border text-sidebar-foreground hover:bg-sidebar-accent"
+          >
+            <Plus className="h-4 w-4" />
+            New Chat
+          </Button>
+        </div>
+
+        {/* Chat History */}
+        <ScrollArea className="flex-1 px-2 scrollbar-thin">
+          <SessionGroup title="Today" items={todaySessions} />
+          <SessionGroup title="Yesterday" items={yesterdaySessions} />
+          <SessionGroup title="Previous" items={olderSessions} />
+          
+          {sessions.length === 0 && (
+            <div className="px-3 py-8 text-center text-sm text-muted-foreground">
+              No chat history yet.
+              <br />
+              Start a new conversation!
+            </div>
+          )}
+        </ScrollArea>
+
+        {/* Footer - Only show admin panel button if user is admin */}
+        {isAdmin && (
+          <div className="p-3 border-t border-sidebar-border">
+            <Button
+              variant="ghost"
+              onClick={onOpenAdmin}
+              className="w-full justify-start gap-2 text-sidebar-foreground hover:bg-sidebar-accent"
+            >
+              <Settings className="h-4 w-4" />
+              Admin Panel
+            </Button>
           </div>
         )}
-      </ScrollArea>
-
-      {/* Footer */}
-      <div className="p-3 border-t border-sidebar-border">
-        <Button
-          variant="ghost"
-          onClick={onOpenAdmin}
-          className="w-full justify-start gap-2 text-sidebar-foreground hover:bg-sidebar-accent"
-        >
-          <Settings className="h-4 w-4" />
-          Admin Panel
-        </Button>
       </div>
-    </div>
+    </>
   );
 }
