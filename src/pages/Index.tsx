@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ChatSidebar } from '@/components/chat/ChatSidebar';
 import { ChatHeader } from '@/components/chat/ChatHeader';
 import { ChatArea } from '@/components/chat/ChatArea';
-import { AdminPanel } from '@/components/chat/AdminPanel';
+import { AdminDashboard } from '@/components/admin';
 import { useChatStore } from '@/hooks/useChatStore';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -99,8 +99,8 @@ const Index = () => {
         </div>
       </div>
 
-      {/* Admin Panel Modal */}
-      <AdminPanel
+      {/* Admin Dashboard Modal */}
+      <AdminDashboard
         isOpen={isAdminOpen}
         onClose={() => setIsAdminOpen(false)}
         models={models}
