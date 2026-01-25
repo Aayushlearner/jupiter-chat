@@ -93,6 +93,8 @@ const Index = () => {
             onSend={sendMessage}
             isLoading={isLoading}
             selectedModelName={selectedModelName}
+            selectedModel={selectedModel}
+            onChangeModel={setSelectedModel}
           />
         </div>
       </div>

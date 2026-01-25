@@ -10,9 +10,11 @@ interface ChatAreaProps {
   onSend: (message: string) => void;
   isLoading: boolean;
   selectedModelName: string;
+  selectedModel: string;
+  onChangeModel: (modelId: string) => void;
 }
 
-export function ChatArea({ messages, onSend, isLoading, selectedModelName }: ChatAreaProps) {
+export function ChatArea({ messages, onSend, isLoading, selectedModelName, selectedModel, onChangeModel }: ChatAreaProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -74,7 +76,12 @@ export function ChatArea({ messages, onSend, isLoading, selectedModelName }: Cha
 
       {/* Input Area */}
       <div className="flex-shrink-0 p-4 pb-6">
-        <ChatInput onSend={onSend} isLoading={isLoading} />
+        <ChatInput 
+          onSend={onSend} 
+          isLoading={isLoading} 
+          selectedModel={selectedModel}
+          onChangeModel={onChangeModel}
+        />
       </div>
     </div>
   );
