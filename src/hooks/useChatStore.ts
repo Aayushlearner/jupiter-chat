@@ -80,7 +80,7 @@ export function useChatStore() {
       const assistantMessage: Message = {
         id: generateId(),
         role: 'assistant',
-        content: `This is a demo response from **${models.find(m => m.id === selectedModel)?.name || 'AI'}**.\n\nTo enable real AI responses, please connect Lovable Cloud and configure the AI integration.\n\n*Your message was:* "${content}"`,
+        content: `This is a demo response from **${models.find(m => m.id === selectedModel)?.name || 'AI'}**.\n\nTo enable real AI responses, connect your AI provider and configure the integration.\n\n*Your message was:* "${content}"`,
         timestamp: new Date(),
       };
 
