@@ -198,6 +198,9 @@ export function useChatStore() {
       if (fp === lastAuthFingerprintRef.current) return;
       lastAuthFingerprintRef.current = fp;
 
+      const [emailPart, tokenPart] = fp.split('::');
+      const isLoggedOut = !String(emailPart || '').trim() && !String(tokenPart || '').trim();
+
       setSessions([]);
       setCurrentSessionId(null);
       setModels(DEFAULT_MODELS);
@@ -206,9 +209,11 @@ export function useChatStore() {
       modelsFetchStartedRef.current = false;
       modelsFetchInFlightRef.current = null;
 
-      refreshModels().catch(() => {
-        // ignore
-      });
+      if (!isLoggedOut) {
+        refreshModels().catch(() => {
+          // ignore
+        });
+      }
     };
 
     handleAuthChanged();
