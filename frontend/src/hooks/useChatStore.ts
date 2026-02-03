@@ -11,6 +11,8 @@ const getBackendBaseUrl = () => {
 
 const STATIC_AUTH_SESSION_KEY = 'jb_static_auth_session';
 
+const MODELS_CACHE_KEY = 'jb_models_cache';
+
 const MODELS_BEARER_TOKEN =
   (import.meta as any)?.env?.VITE_MODELS_BEARER_TOKEN && typeof (import.meta as any).env.VITE_MODELS_BEARER_TOKEN === 'string'
     ? (import.meta as any).env.VITE_MODELS_BEARER_TOKEN.replace(/"/g, '').trim()
@@ -56,6 +58,39 @@ const getChatCompletionsUrl = () => `${getBackendBaseUrl()}/api/chat/completions
 
 const getModelsUrl = () => `${getBackendBaseUrl()}/api/models?`;
 
+const readCachedModels = (): AIModel[] | null => {
+  try {
+    const raw = localStorage.getItem(MODELS_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    const cleaned = parsed
+      .map((m: any) => {
+        const id = typeof m?.id === 'string' ? m.id.trim() : '';
+        if (!id) return null;
+        return {
+          id,
+          name: typeof m?.name === 'string' && m.name.trim() ? m.name : id,
+          description:
+            typeof m?.description === 'string' && m.description.trim() ? m.description : 'Model',
+          enabled: typeof m?.enabled === 'boolean' ? m.enabled : true,
+        } as AIModel;
+      })
+      .filter(Boolean) as AIModel[];
+    return cleaned.length > 0 ? cleaned : null;
+  } catch {
+    return null;
+  }
+};
+
+const writeCachedModels = (models: AIModel[]) => {
+  try {
+    localStorage.setItem(MODELS_CACHE_KEY, JSON.stringify(models));
+  } catch {
+    // ignore
+  }
+};
+
 const generateTitle = (content: string): string => {
   const words = content.split(' ').slice(0, 5).join(' ');
   return words.length > 30 ? words.substring(0, 30) + '...' : words;
@@ -64,15 +99,23 @@ const generateTitle = (content: string): string => {
 export function useChatStore() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
-  const [models, setModels] = useState<AIModel[]>(DEFAULT_MODELS);
+  const [models, setModels] = useState<AIModel[]>(() => readCachedModels() || DEFAULT_MODELS);
   const [selectedModel, setSelectedModel] = useState<string>('jupiterbrains');
   const [isLoading, setIsLoading] = useState(false);
+
+  const lastAuthFingerprintRef = useRef<string>('');
 
   const modelsFetchStartedRef = useRef(false);
   const modelsFetchInFlightRef = useRef<Promise<void> | null>(null);
 
   const ensureModelsLoaded = useCallback(async () => {
-    if (modelsFetchStartedRef.current) return;
+    if (modelsFetchStartedRef.current) {
+      if (modelsFetchInFlightRef.current) {
+        await modelsFetchInFlightRef.current;
+      }
+      return;
+    }
+
     modelsFetchStartedRef.current = true;
 
     const promise = (async () => {
@@ -96,10 +139,20 @@ export function useChatStore() {
           headers: { Accept: 'application/json', ...bearerHeader, ...apiKeyHeader },
         });
 
-        if (!res.ok) return;
+        if (!res.ok) {
+          const cached = readCachedModels();
+          if (cached) setModels(cached);
+          modelsFetchStartedRef.current = false;
+          return;
+        }
 
         const data = await res.json().catch(() => null);
-        if (!data) return;
+        if (!data) {
+          const cached = readCachedModels();
+          if (cached) setModels(cached);
+          modelsFetchStartedRef.current = false;
+          return;
+        }
 
         const d: any = data as any;
 
@@ -123,7 +176,12 @@ export function useChatStore() {
                           : Array.isArray(d?.payload?.models)
                             ? d.payload.models
                             : null;
-        if (!Array.isArray(rawModels) || rawModels.length === 0) return;
+        if (!Array.isArray(rawModels) || rawModels.length === 0) {
+          const cached = readCachedModels();
+          if (cached) setModels(cached);
+          modelsFetchStartedRef.current = false;
+          return;
+        }
 
         const mapped: AIModel[] = rawModels
           .map((m: any) => {
@@ -147,22 +205,93 @@ export function useChatStore() {
           })
           .filter(Boolean) as AIModel[];
 
-        if (mapped.length === 0) return;
+        if (mapped.length === 0) {
+          const cached = readCachedModels();
+          if (cached) setModels(cached);
+          modelsFetchStartedRef.current = false;
+          return;
+        }
 
         setModels(mapped);
+        writeCachedModels(mapped);
         setSelectedModel((prev) => {
           const enabled = mapped.filter((x) => x.enabled);
           const available = enabled.length > 0 ? enabled : mapped;
           return available.some((x) => x.id === prev) ? prev : available[0].id;
         });
       } catch {
-        // ignore
+        const cached = readCachedModels();
+        if (cached) setModels(cached);
+        modelsFetchStartedRef.current = false;
       }
     })();
 
     modelsFetchInFlightRef.current = promise;
     await promise;
+
+    modelsFetchInFlightRef.current = null;
   }, []);
+
+  useEffect(() => {
+    ensureModelsLoaded().catch(() => {
+      // ignore
+    });
+  }, [ensureModelsLoaded]);
+
+  const refreshModels = useCallback(async () => {
+    modelsFetchStartedRef.current = false;
+    modelsFetchInFlightRef.current = null;
+    await ensureModelsLoaded();
+  }, [ensureModelsLoaded]);
+
+  useEffect(() => {
+    const computeFingerprint = () => {
+      try {
+        const rawUser = localStorage.getItem('jb_static_auth');
+        const rawSession = localStorage.getItem(STATIC_AUTH_SESSION_KEY);
+        const user = rawUser ? JSON.parse(rawUser) : null;
+        const session = rawSession ? JSON.parse(rawSession) : null;
+        const email = typeof user?.email === 'string' ? user.email : '';
+        const token = typeof session?.token === 'string' ? session.token : '';
+        return `${email}::${token}`;
+      } catch {
+        return '';
+      }
+    };
+
+    const handleAuthChanged = () => {
+      const fp = computeFingerprint();
+      if (fp === lastAuthFingerprintRef.current) return;
+      lastAuthFingerprintRef.current = fp;
+
+      const [emailPart, tokenPart] = fp.split('::');
+      const isLoggedOut = !String(emailPart || '').trim() && !String(tokenPart || '').trim();
+
+      setSessions([]);
+      setCurrentSessionId(null);
+      setModels(readCachedModels() || DEFAULT_MODELS);
+      setSelectedModel('jupiterbrains');
+
+      modelsFetchStartedRef.current = false;
+      modelsFetchInFlightRef.current = null;
+
+      if (!isLoggedOut) {
+        refreshModels().catch(() => {
+          // ignore
+        });
+      }
+    };
+
+    handleAuthChanged();
+
+    window.addEventListener('jb-auth-changed', handleAuthChanged);
+    window.addEventListener('storage', handleAuthChanged);
+
+    return () => {
+      window.removeEventListener('jb-auth-changed', handleAuthChanged);
+      window.removeEventListener('storage', handleAuthChanged);
+    };
+  }, [refreshModels]);
 
   useEffect(() => {
     return () => {
@@ -343,9 +472,11 @@ export function useChatStore() {
   }, [currentSession, createNewSession, selectedModel, models]);
 
   const updateModel = useCallback((modelId: string, updates: Partial<AIModel>) => {
-    setModels((prev) =>
-      prev.map((m) => (m.id === modelId ? { ...m, ...updates } : m))
-    );
+    setModels((prev) => {
+      const next = prev.map((m) => (m.id === modelId ? { ...m, ...updates } : m));
+      writeCachedModels(next);
+      return next;
+    });
   }, []);
 
   const addModel = useCallback((model: Omit<AIModel, 'id'>) => {
@@ -353,11 +484,19 @@ export function useChatStore() {
       ...model,
       id: generateId(),
     };
-    setModels((prev) => [...prev, newModel]);
+    setModels((prev) => {
+      const next = [...prev, newModel];
+      writeCachedModels(next);
+      return next;
+    });
   }, []);
 
   const removeModel = useCallback((modelId: string) => {
-    setModels((prev) => prev.filter((m) => m.id !== modelId));
+    setModels((prev) => {
+      const next = prev.filter((m) => m.id !== modelId);
+      writeCachedModels(next);
+      return next;
+    });
   }, []);
 
   return {
@@ -374,6 +513,7 @@ export function useChatStore() {
     sendMessage,
     setSelectedModel,
     ensureModelsLoaded,
+    refreshModels,
     updateModel,
     addModel,
     removeModel,
