@@ -68,6 +68,8 @@ export function useChatStore() {
   const [selectedModel, setSelectedModel] = useState<string>('jupiterbrains');
   const [isLoading, setIsLoading] = useState(false);
 
+  const lastAuthFingerprintRef = useRef<string>('');
+
   const modelsFetchStartedRef = useRef(false);
   const modelsFetchInFlightRef = useRef<Promise<void> | null>(null);
 
@@ -163,6 +165,62 @@ export function useChatStore() {
     modelsFetchInFlightRef.current = promise;
     await promise;
   }, []);
+
+  useEffect(() => {
+    ensureModelsLoaded().catch(() => {
+      // ignore
+    });
+  }, [ensureModelsLoaded]);
+
+  const refreshModels = useCallback(async () => {
+    modelsFetchStartedRef.current = false;
+    modelsFetchInFlightRef.current = null;
+    await ensureModelsLoaded();
+  }, [ensureModelsLoaded]);
+
+  useEffect(() => {
+    const computeFingerprint = () => {
+      try {
+        const rawUser = localStorage.getItem('jb_static_auth');
+        const rawSession = localStorage.getItem(STATIC_AUTH_SESSION_KEY);
+        const user = rawUser ? JSON.parse(rawUser) : null;
+        const session = rawSession ? JSON.parse(rawSession) : null;
+        const email = typeof user?.email === 'string' ? user.email : '';
+        const token = typeof session?.token === 'string' ? session.token : '';
+        return `${email}::${token}`;
+      } catch {
+        return '';
+      }
+    };
+
+    const handleAuthChanged = () => {
+      const fp = computeFingerprint();
+      if (fp === lastAuthFingerprintRef.current) return;
+      lastAuthFingerprintRef.current = fp;
+
+      setSessions([]);
+      setCurrentSessionId(null);
+      setModels(DEFAULT_MODELS);
+      setSelectedModel('jupiterbrains');
+
+      modelsFetchStartedRef.current = false;
+      modelsFetchInFlightRef.current = null;
+
+      refreshModels().catch(() => {
+        // ignore
+      });
+    };
+
+    handleAuthChanged();
+
+    window.addEventListener('jb-auth-changed', handleAuthChanged);
+    window.addEventListener('storage', handleAuthChanged);
+
+    return () => {
+      window.removeEventListener('jb-auth-changed', handleAuthChanged);
+      window.removeEventListener('storage', handleAuthChanged);
+    };
+  }, [refreshModels]);
 
   useEffect(() => {
     return () => {
@@ -374,6 +432,7 @@ export function useChatStore() {
     sendMessage,
     setSelectedModel,
     ensureModelsLoaded,
+    refreshModels,
     updateModel,
     addModel,
     removeModel,
