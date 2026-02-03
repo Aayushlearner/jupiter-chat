@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Message, ChatSession, AIModel, DEFAULT_MODELS } from '@/types/chat';
 
 const generateId = () => Math.random().toString(36).substring(2, 15);
@@ -81,10 +81,14 @@ export function useChatStore() {
   const [selectedModel, setSelectedModel] = useState<string>('jupiterbrains');
   const [isLoading, setIsLoading] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
+  const modelsFetchStartedRef = useRef(false);
+  const modelsFetchInFlightRef = useRef<Promise<void> | null>(null);
 
-    const loadModels = async () => {
+  const ensureModelsLoaded = useCallback(async () => {
+    if (modelsFetchStartedRef.current) return;
+    modelsFetchStartedRef.current = true;
+
+    const promise = (async () => {
       try {
         const envToken = MODELS_BEARER_TOKEN;
         const storedToken = getStoredBearerToken();
@@ -106,7 +110,7 @@ export function useChatStore() {
         if (!res.ok) return;
 
         const data = await res.json().catch(() => null);
-        if (cancelled || !data) return;
+        if (!data) return;
 
         const d: any = data as any;
 
@@ -165,11 +169,15 @@ export function useChatStore() {
       } catch {
         // ignore
       }
-    };
+    })();
 
-    loadModels();
+    modelsFetchInFlightRef.current = promise;
+    await promise;
+  }, []);
+
+  useEffect(() => {
     return () => {
-      cancelled = true;
+      modelsFetchInFlightRef.current = null;
     };
   }, []);
 
@@ -365,8 +373,8 @@ export function useChatStore() {
     sessions,
     currentSession,
     currentSessionId,
-    models,
     enabledModels,
+    models,
     selectedModel,
     isLoading,
     createNewSession,
@@ -374,6 +382,7 @@ export function useChatStore() {
     deleteSession,
     sendMessage,
     setSelectedModel,
+    ensureModelsLoaded,
     updateModel,
     addModel,
     removeModel,

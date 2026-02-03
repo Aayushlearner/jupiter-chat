@@ -16,7 +16,7 @@ interface ChatSidebarProps {
   onSignOut?: () => void;
   isOpen: boolean;
   isAdmin?: boolean;
-  userEmail?: string;
+  userName?: string;
 }
 
 export function ChatSidebar({
@@ -30,7 +30,7 @@ export function ChatSidebar({
   onSignOut,
   isOpen,
   isAdmin = false,
-  userEmail,
+  userName,
 }: ChatSidebarProps) {
   const todaySessions = sessions.filter((s) => {
     const today = new Date();
@@ -161,10 +161,10 @@ export function ChatSidebar({
         {/* Footer */}
         <div className="p-3 border-t border-sidebar-border space-y-2">
           {/* User info */}
-          {userEmail && (
+          {userName && (
             <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground">
               <User className="h-3.5 w-3.5" />
-              <span className="truncate">{userEmail}</span>
+              <span className="truncate">{userName}</span>
               {isAdmin && (
                 <span className="ml-auto text-[10px] bg-primary/20 text-primary px-1.5 py-0.5 rounded font-medium">
                   Admin

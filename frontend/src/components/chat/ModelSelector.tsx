@@ -12,6 +12,7 @@ interface ModelSelectorProps {
   models: AIModel[];
   selectedModel: string;
   onSelectModel: (modelId: string) => void;
+  onOpenChange?: (open: boolean) => void;
 }
 
 const getModelIcon = (modelId: string) => {
@@ -35,11 +36,12 @@ export function ModelSelector({
   models,
   selectedModel,
   onSelectModel,
+  onOpenChange,
 }: ModelSelectorProps) {
   const currentModel = models.find((m) => m.id === selectedModel);
 
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>
         <Button
           variant="ghost"

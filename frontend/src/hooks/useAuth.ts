@@ -159,7 +159,7 @@ export function useAuth() {
     try {
       localStorage.setItem(
         STATIC_AUTH_STORAGE_KEY,
-        JSON.stringify({ email: payload.email, role: payload.role, id: String(payload.id) })
+        JSON.stringify({ email: payload.email, role: payload.role, id: String(payload.id), name: payload.name })
       );
     } catch {
       // ignore
@@ -189,7 +189,7 @@ export function useAuth() {
         return;
       }
 
-      const parsed = JSON.parse(raw) as { email?: string; role?: AppRole; id?: string };
+      const parsed = JSON.parse(raw) as { email?: string; role?: AppRole; id?: string; name?: string };
       if (!parsed.email) {
         setAuthState(prev => ({ ...prev, isLoading: false }));
         return;
@@ -198,6 +198,7 @@ export function useAuth() {
       const fakeUser: StaticUser = {
         id: parsed.id || 'static-user',
         email: parsed.email,
+        name: typeof parsed.name === 'string' ? parsed.name : undefined,
         role: parsed.role === 'admin' ? 'admin' : 'user',
       };
 
@@ -263,7 +264,20 @@ export function useAuth() {
       const resolvedEmail = payload?.email || email;
       const role = (roleOverride || payload?.role || 'user') as AppRole;
 
-      setSessionUser({ id: typeof id === 'number' ? id : Number(id) || 0, email: resolvedEmail, role });
+      const name = typeof payload?.name === 'string' ? payload.name : undefined;
+      const profile_image_url = typeof payload?.profile_image_url === 'string' ? payload.profile_image_url : undefined;
+
+      setSessionUser({
+        id: typeof id === 'number' ? id : Number(id) || 0,
+        email: resolvedEmail,
+        role,
+        name,
+        profile_image_url,
+        token: typeof payload?.token === 'string' ? payload.token : undefined,
+        token_type: typeof payload?.token_type === 'string' ? payload.token_type : undefined,
+        expires_at: typeof payload?.expires_at === 'number' ? payload.expires_at : undefined,
+        permissions: payload?.permissions,
+      });
       return { error: null };
     } catch (e: any) {
       return { error: { message: e?.message || 'Login failed' } };

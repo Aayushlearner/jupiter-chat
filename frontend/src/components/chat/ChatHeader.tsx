@@ -7,6 +7,7 @@ interface ChatHeaderProps {
   models: AIModel[];
   selectedModel: string;
   onSelectModel: (modelId: string) => void;
+  onOpenModels?: () => void;
   onOpenSidebar: () => void;
   isSidebarOpen: boolean;
 }
@@ -15,6 +16,7 @@ export function ChatHeader({
   models,
   selectedModel,
   onSelectModel,
+  onOpenModels,
   onOpenSidebar,
   isSidebarOpen,
 }: ChatHeaderProps) {
@@ -34,6 +36,9 @@ export function ChatHeader({
         models={models}
         selectedModel={selectedModel}
         onSelectModel={onSelectModel}
+        onOpenChange={(open) => {
+          if (open) onOpenModels?.();
+        }}
       />
     </header>
   );

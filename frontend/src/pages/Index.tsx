@@ -17,6 +17,7 @@ const Index = () => {
     currentSessionId,
     enabledModels,
     models,
+    ensureModelsLoaded,
     selectedModel,
     isLoading,
     createNewSession,
@@ -69,7 +70,7 @@ const Index = () => {
         onSignOut={handleSignOut}
         isOpen={isSidebarOpen}
         isAdmin={isAdmin}
-        userEmail={user.email}
+        userName={user.name || user.email}
       />
 
       {/* Main Content */}
@@ -79,6 +80,9 @@ const Index = () => {
           models={modelsForSelector}
           selectedModel={selectedModel}
           onSelectModel={setSelectedModel}
+          onOpenModels={() => {
+            ensureModelsLoaded();
+          }}
           onOpenSidebar={() => setIsSidebarOpen(true)}
           isSidebarOpen={isSidebarOpen}
         />
