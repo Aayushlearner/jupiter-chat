@@ -275,78 +275,6 @@ export function useAuth() {
     }
   };
 
-  const signUp = async (email: string, password: string, roleOverride?: AppRole, nameOverride?: string) => {
-    try {
-      const signUpUrl = `${getBackendBaseUrl()}/api/v1/auths/signup`;
-
-      const cleanProvidedName =
-        typeof nameOverride === 'string' ? nameOverride.replace(/[^a-zA-Z0-9_\-\s]/g, '').trim() : '';
-
-      const derivedName = String(email || '')
-        .split('@')[0]
-        ?.replace(/[^a-zA-Z0-9_\-\s]/g, '')
-        .trim();
-      const name = cleanProvidedName || derivedName || 'user';
-
-      const authValue = SIGNUP_BEARER_TOKEN
-        ? SIGNUP_BEARER_TOKEN.toLowerCase().startsWith('bearer ')
-          ? SIGNUP_BEARER_TOKEN
-          : `Bearer ${SIGNUP_BEARER_TOKEN}`
-        : '';
-
-      const bearerHeader = authValue ? { Authorization: authValue } : {};
-      const apiKeyHeader = SIGNUP_API_KEY ? { [SIGNUP_API_KEY_HEADER]: SIGNUP_API_KEY } : {};
-      const authHeader = { ...bearerHeader, ...apiKeyHeader };
-
-      const jsonRes = await fetch(signUpUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...authHeader },
-        credentials: 'include',
-        body: JSON.stringify({ email, password, name }),
-      });
-
-      const jsonData = await jsonRes.json().catch(() => null);
-
-      const missingBody422 =
-        jsonRes.status === 422 &&
-        Array.isArray(jsonData?.detail) &&
-        jsonData.detail.some((d: any) => Array.isArray(d?.loc) && d.loc.join('.') === 'body' && d.type === 'missing');
-
-      const res = missingBody422
-        ? await fetch(signUpUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json', ...authHeader },
-            credentials: 'include',
-            body: new URLSearchParams({ email, password, name }).toString(),
-          })
-        : jsonRes;
-
-      const data = missingBody422 ? await res.json().catch(() => null) : jsonData;
-
-      if (!res.ok) {
-        const detail = typeof data?.detail === 'string' ? data.detail : null;
-        const message = detail || `Signup failed (HTTP ${res.status})`;
-        return { data: null, error: { message } };
-      }
-
-      const finalRole = (data?.role || roleOverride || 'user') as AppRole;
-      setSessionUser({
-        id: data?.id,
-        email: data?.email || email,
-        role: finalRole,
-        name: data?.name,
-        profile_image_url: data?.profile_image_url,
-        token: data?.token,
-        token_type: data?.token_type,
-        expires_at: data?.expires_at,
-        permissions: data?.permissions,
-      });
-      return { data, error: null };
-    } catch (e: any) {
-      return { data: null, error: { message: e?.message || 'Signup failed' } };
-    }
-  };
-
   const signOut = async () => {
     try {
       const signOutUrl = `${getBackendBaseUrl()}/api/v1/auths/signout`;
@@ -418,7 +346,6 @@ export function useAuth() {
   return {
     ...authState,
     signIn,
-    signUp,
     signOut,
     signInWithGoogle,
     signInWithGithub,
