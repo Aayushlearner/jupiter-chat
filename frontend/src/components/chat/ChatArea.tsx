@@ -41,11 +41,11 @@ export function ChatArea({ messages, onSend, isLoading, selectedModelName, selec
                 </div>
               </div>
               <div>
-                <h1 className="text-2xl font-semibold mb-2">
+                <h1 className="text-2xl font-semibold mb-2 text-white">
                   How can I help you today?
                 </h1>
-                <p className="text-muted-foreground">
-                  Using <span className="font-medium text-foreground">{selectedModelName}</span>
+                <p className="text-gray-400">
+                  Using <span className="font-medium text-white">{selectedModelName}</span>
                 </p>
               </div>
             </div>
@@ -76,9 +76,9 @@ export function ChatArea({ messages, onSend, isLoading, selectedModelName, selec
 
       {/* Input Area */}
       <div className="flex-shrink-0 p-4 pb-6">
-        <ChatInput 
-          onSend={onSend} 
-          isLoading={isLoading} 
+        <ChatInput
+          onSend={onSend}
+          isLoading={isLoading}
           selectedModel={selectedModel}
           onChangeModel={onChangeModel}
         />

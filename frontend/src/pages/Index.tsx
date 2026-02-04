@@ -10,6 +10,7 @@ const Index = () => {
   const navigate = useNavigate();
   const { user, isLoading: authLoading, isAdmin, signOut } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
   const {
     sessions,
@@ -41,6 +42,9 @@ const Index = () => {
     models.find((m) => m.id === selectedModel)?.name || 'JupiterBrains';
 
   const handleSignOut = async () => {
+    setIsSigningOut(true);
+    // Wait for fade-out animation
+    await new Promise(resolve => setTimeout(resolve, 400));
     await signOut();
     navigate('/auth');
   };
@@ -58,7 +62,19 @@ const Index = () => {
   }
 
   return (
-    <div className="flex h-screen bg-background dark">
+    <div className="flex h-screen bg-background dark relative">
+      {/* Sign Out Transition Overlay */}
+      {isSigningOut && (
+        <div className="absolute inset-0 bg-background z-50 animate-in fade-in duration-400">
+          <div className="flex h-full items-center justify-center">
+            <div className="text-center space-y-4">
+              <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin mx-auto"></div>
+              <p className="text-white text-sm">Signing out...</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Sidebar */}
       <ChatSidebar
         sessions={sessions}

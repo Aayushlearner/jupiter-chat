@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Shield, Settings, BarChart3, Users, DollarSign, ArrowLeft, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,7 @@ import { IPRiskAnalytics } from '@/components/admin/IPRiskAnalytics';
 export default function Admin() {
   const navigate = useNavigate();
   const { user, isLoading: authLoading, isAdmin, signOut } = useAuth();
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
   const {
     models,
@@ -34,6 +35,9 @@ export default function Admin() {
   }, [authLoading, user, isAdmin, navigate]);
 
   const handleSignOut = async () => {
+    setIsSigningOut(true);
+    // Wait for fade-out animation
+    await new Promise(resolve => setTimeout(resolve, 400));
     await signOut();
     navigate('/auth');
   };
@@ -41,7 +45,7 @@ export default function Admin() {
   if (authLoading) {
     return (
       <div className="flex h-screen items-center justify-center bg-background dark">
-        <div className="animate-pulse text-muted-foreground">Loading...</div>
+        <div className="animate-pulse text-white">Loading...</div>
       </div>
     );
   }
@@ -51,21 +55,33 @@ export default function Admin() {
   }
 
   return (
-    <div className="min-h-screen bg-background dark">
+    <div className="min-h-screen bg-background dark relative">
+      {/* Sign Out Transition Overlay */}
+      {isSigningOut && (
+        <div className="absolute inset-0 bg-background z-50 animate-in fade-in duration-400">
+          <div className="flex h-full items-center justify-center">
+            <div className="text-center space-y-4">
+              <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin mx-auto"></div>
+              <p className="text-white text-sm">Signing out...</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="border-b border-border">
         <div className="mx-auto max-w-6xl px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Shield className="h-5 w-5" />
-            <div className="font-semibold">Admin Dashboard</div>
+            <Shield className="h-5 w-5 text-white" />
+            <div className="font-semibold text-white">Admin Dashboard</div>
           </div>
 
           <div className="flex items-center gap-2">
-            <Button variant="outline" className="gap-2" onClick={() => navigate('/')}
+            <Button variant="outline" className="gap-2 text-white border-white/20 hover:bg-white/10 hover:text-white" onClick={() => navigate('/')}
             >
               <ArrowLeft className="h-4 w-4" />
               Back to Chat
             </Button>
-            <Button variant="ghost" className="gap-2" onClick={handleSignOut}>
+            <Button variant="ghost" className="gap-2 text-white hover:bg-white/10 hover:text-white" onClick={handleSignOut}>
               <LogOut className="h-4 w-4" />
               Sign Out
             </Button>

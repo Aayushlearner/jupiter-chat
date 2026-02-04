@@ -60,7 +60,7 @@ export function ChatSidebar({
 
     return (
       <div className="mb-4">
-        <h3 className="px-3 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+        <h3 className="px-3 py-2 text-xs font-medium text-gray-400 uppercase tracking-wider">
           {title}
         </h3>
         <div className="space-y-1">
@@ -70,12 +70,12 @@ export function ChatSidebar({
               className={cn(
                 'group flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors',
                 currentSessionId === session.id
-                  ? 'bg-accent text-accent-foreground'
-                  : 'text-sidebar-foreground hover:bg-accent/50'
+                  ? 'bg-accent text-white'
+                  : 'text-white hover:bg-accent/50'
               )}
               onClick={() => onSelectSession(session.id)}
             >
-              <MessageSquare className="h-4 w-4 flex-shrink-0 text-sidebar-foreground/70" />
+              <MessageSquare className="h-4 w-4 flex-shrink-0 text-white/70" />
               <span className="flex-1 truncate text-sm">{session.title}</span>
               <Button
                 variant="ghost"
@@ -118,13 +118,13 @@ export function ChatSidebar({
         <div className="flex items-center justify-between p-3 border-b border-sidebar-border">
           <div className="flex items-center gap-2">
             <img src={jupiterBrainsLogo} alt="JupiterBrains" className="w-7 h-7" />
-            <span className="font-semibold text-sidebar-foreground">JupiterBrains</span>
+            <span className="font-semibold text-white">JupiterBrains</span>
           </div>
           <Button
             variant="ghost"
             size="icon"
             onClick={onClose}
-            className="h-8 w-8 text-sidebar-foreground hover:bg-sidebar-accent"
+            className="h-8 w-8 text-white hover:bg-sidebar-accent hover:text-white"
           >
             <X className="h-4 w-4 md:hidden" />
             <PanelLeftClose className="h-4 w-4 hidden md:block" />
@@ -136,7 +136,7 @@ export function ChatSidebar({
           <Button
             onClick={onNewChat}
             variant="outline"
-            className="w-full justify-start gap-2 bg-transparent border-sidebar-border text-sidebar-foreground hover:bg-sidebar-accent"
+            className="w-full justify-start gap-2 bg-transparent border-sidebar-border text-white hover:bg-sidebar-accent hover:text-white"
           >
             <Plus className="h-4 w-4" />
             New Chat
@@ -148,9 +148,9 @@ export function ChatSidebar({
           <SessionGroup title="Today" items={todaySessions} />
           <SessionGroup title="Yesterday" items={yesterdaySessions} />
           <SessionGroup title="Previous" items={olderSessions} />
-          
+
           {sessions.length === 0 && (
-            <div className="px-3 py-8 text-center text-sm text-muted-foreground">
+            <div className="px-3 py-8 text-center text-sm text-gray-400">
               No chat history yet.
               <br />
               Start a new conversation!
@@ -162,11 +162,11 @@ export function ChatSidebar({
         <div className="p-3 border-t border-sidebar-border space-y-2">
           {/* User info */}
           {userName && (
-            <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground">
+            <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-gray-300">
               <User className="h-3.5 w-3.5" />
               <span className="truncate">{userName}</span>
               {isAdmin && (
-                <span className="ml-auto text-[10px] bg-primary/20 text-primary px-1.5 py-0.5 rounded font-medium">
+                <span className="ml-auto text-[10px] bg-white/20 text-white px-1.5 py-0.5 rounded font-medium">
                   Admin
                 </span>
               )}
@@ -178,7 +178,7 @@ export function ChatSidebar({
             <Button
               variant="ghost"
               onClick={onOpenAdmin}
-              className="w-full justify-start gap-2 text-sidebar-foreground hover:bg-sidebar-accent"
+              className="w-full justify-start gap-2 text-white hover:bg-sidebar-accent hover:text-white"
             >
               <Settings className="h-4 w-4" />
               Admin Panel
@@ -190,7 +190,7 @@ export function ChatSidebar({
             <Button
               variant="ghost"
               onClick={onSignOut}
-              className="w-full justify-start gap-2 text-sidebar-foreground hover:bg-sidebar-accent"
+              className="w-full justify-start gap-2 text-white hover:bg-sidebar-accent hover:text-white"
             >
               <LogOut className="h-4 w-4" />
               Sign Out

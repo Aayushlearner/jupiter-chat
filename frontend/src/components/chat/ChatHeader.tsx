@@ -27,7 +27,7 @@ export function ChatHeader({
           variant="ghost"
           size="icon"
           onClick={onOpenSidebar}
-          className="h-9 w-9"
+          className="h-9 w-9 text-white hover:bg-white/10 hover:text-white"
         >
           <PanelLeft className="h-5 w-5" />
         </Button>
