@@ -151,8 +151,13 @@ export function useAuth() {
 
         data = await res.json().catch(() => null);
       }
-    } catch {
-      return { error: { message: 'Backend not reachable' } };
+    } catch (err: any) {
+      console.error('Signin fetch error:', err);
+      return {
+        error: {
+          message: 'Cannot connect to backend at http://localhost:8081. Please ensure: 1) Backend is running, 2) CORS is configured to allow http://localhost:5173'
+        }
+      };
     }
 
     if (!res.ok) {
