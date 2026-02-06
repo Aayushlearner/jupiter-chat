@@ -211,14 +211,29 @@ export function useAuth() {
       const apiKeyHeader = SIGNUP_API_KEY ? { [SIGNUP_API_KEY_HEADER]: SIGNUP_API_KEY } : {};
       const authHeader = { ...bearerHeader, ...apiKeyHeader };
 
-      const jsonRes = await fetch(signInUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...authHeader },
-        credentials: 'include',
-        body: JSON.stringify({ email, password }),
-      });
+      let jsonRes: Response;
+      let jsonData: any = null;
 
-      const jsonData = await jsonRes.json().catch(() => null);
+      try {
+        console.log('Attempting signin to:', signInUrl);
+        jsonRes = await fetch(signInUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...authHeader },
+          credentials: 'include',
+          body: JSON.stringify({ email, password }),
+        });
+        jsonData = await jsonRes.json().catch(() => null);
+      } catch (fetchError: any) {
+        console.error('Signin fetch error:', fetchError);
+        if (fetchError.message?.includes('Failed to fetch') || fetchError.name === 'TypeError') {
+          return {
+            error: {
+              message: 'Cannot connect to backend at http://localhost:8081. Please ensure: 1) Backend is running, 2) CORS is configured to allow http://localhost:5173'
+            }
+          };
+        }
+        throw fetchError;
+      }
 
       const missingBody422 =
         jsonRes.status === 422 &&
@@ -239,6 +254,7 @@ export function useAuth() {
       if (!res.ok) {
         const detail = typeof data?.detail === 'string' ? data.detail : null;
         const message = detail || `Login failed (HTTP ${res.status})`;
+        console.error('Signin failed:', message);
         return { error: { message } };
       }
 
@@ -253,6 +269,7 @@ export function useAuth() {
       const name = typeof payload?.name === 'string' ? payload.name : undefined;
       const profile_image_url = typeof payload?.profile_image_url === 'string' ? payload.profile_image_url : undefined;
 
+      console.log('Signin successful');
       setSessionUser({
         id: typeof id === 'number' ? id : Number(id) || 0,
         email: resolvedEmail,
@@ -266,6 +283,7 @@ export function useAuth() {
       });
       return { error: null };
     } catch (e: any) {
+      console.error('Signin error:', e);
       return { error: { message: e?.message || 'Login failed' } };
     }
   };

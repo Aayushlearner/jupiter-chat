@@ -92,12 +92,12 @@ export function ChatArea({ messages, onSend, isLoading, selectedModelName, selec
           setRecommendation(null);
           setPendingMessage(null);
         }}
-        onConfirm={async () => {
+        onConfirm={async (modelId: string) => {
           if (recommendation && pendingMessage) {
-            // Switch to recommended model
-            onChangeModel(recommendation.recommended_model);
+            // Switch to selected model
+            onChangeModel(modelId);
             // Resend with modelOverride to skip recommendation and get AI response
-            await onSend(pendingMessage, recommendation.recommended_model);
+            await onSend(pendingMessage, modelId);
           }
           setRecommendation(null);
           setPendingMessage(null);
@@ -112,6 +112,7 @@ export function ChatArea({ messages, onSend, isLoading, selectedModelName, selec
         }}
         suggestedModel={recommendation?.recommended_model || ''}
         reason={recommendation?.reason || ''}
+        alternatives={recommendation?.alternatives || []}
       />
     </div>
   );

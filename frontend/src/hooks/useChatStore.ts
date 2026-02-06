@@ -690,6 +690,14 @@ export function useChatStore() {
           model: modelToUse,
           messages: history,
           session_id: session?.id,
+          // If modelOverride is set, user chose to continue with current model
+          // Add metadata to bypass SLM recommendation and get direct LLM response
+          ...(modelOverride && {
+            metadata: {
+              slm_decision: 'reject',
+              slm_bypass: true,
+            },
+          }),
         }),
       });
 
@@ -713,39 +721,29 @@ export function useChatStore() {
         };
       }
 
-      // If modelOverride is provided and backend still sent recommendation, ignore it
-      let aiText = '';
-
-      if (modelOverride && d?.type === 'model_recommendation') {
-        // User chose to continue with current model, backend ignored our request
-        // Force a generic response since backend won't process with non-recommended model
-        console.warn('Backend sent recommendation despite modelOverride, forcing generic response');
-        aiText = `I'll help you with that using ${modelOverride}. However, the backend suggests using a different model for better results. You can try again with the recommended model for optimal performance.`;
-      } else {
-        // Normal response extraction
-        aiText =
-          typeof d === 'string'
-            ? d
-            : typeof d?.content === 'string'
-              ? d.content
-              : typeof d?.message === 'string'
-                ? d.message
-                : typeof d?.response === 'string'
-                  ? d.response
-                  : typeof d?.text === 'string'
-                    ? d.text
-                    : typeof d?.data?.content === 'string'
-                      ? d.data.content
-                      : typeof d?.data?.message === 'string'
-                        ? d.data.message
-                        : typeof d?.data?.response === 'string'
-                          ? d.data.response
-                          : typeof d?.choices?.[0]?.message?.content === 'string'
-                            ? d.choices[0].message.content
-                            : typeof d?.choices?.[0]?.text === 'string'
-                              ? d.choices[0].text
-                              : '';
-      }
+      // Extract AI response - backend now handles modelOverride properly
+      const aiText =
+        typeof d === 'string'
+          ? d
+          : typeof d?.content === 'string'
+            ? d.content
+            : typeof d?.message === 'string'
+              ? d.message
+              : typeof d?.response === 'string'
+                ? d.response
+                : typeof d?.text === 'string'
+                  ? d.text
+                  : typeof d?.data?.content === 'string'
+                    ? d.data.content
+                    : typeof d?.data?.message === 'string'
+                      ? d.data.message
+                      : typeof d?.data?.response === 'string'
+                        ? d.data.response
+                        : typeof d?.choices?.[0]?.message?.content === 'string'
+                          ? d.choices[0].message.content
+                          : typeof d?.choices?.[0]?.text === 'string'
+                            ? d.choices[0].text
+                            : '';
 
       const assistantMessage: Message = {
         id: generateId(),
