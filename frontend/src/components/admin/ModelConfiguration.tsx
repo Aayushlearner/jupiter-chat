@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Trash2, GripVertical } from 'lucide-react';
+import { Trash2, GripVertical, Settings2, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { AIModel } from '@/types/chat';
@@ -8,6 +8,14 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { getBackendBaseUrl, API_ENDPOINTS } from '@/utils/config';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 
 interface ModelConfigurationProps {
   models: AIModel[];
@@ -221,12 +229,124 @@ export function ModelConfiguration({
 
   return (
     <div className="space-y-6">
-      <Card className="bg-card border-border">
-        <CardHeader>
-          <CardTitle className="text-lg">Available Models</CardTitle>
-          <CardDescription>Configure which models are available to users</CardDescription>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-white tracking-tight">Models</h2>
+          <p className="text-zinc-400 text-sm">Manage the intelligence of your assistant</p>
+        </div>
+
+        <Dialog>
+          <DialogTrigger asChild>
+            <Button className="bg-white text-black hover:bg-zinc-200 transition-all font-semibold gap-2 shadow-[0_0_15px_rgba(255,255,255,0.1)]">
+              <Settings2 className="h-4 w-4" />
+              Connect OpenAI
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-[600px] bg-zinc-950 border-white/10 text-white backdrop-blur-xl">
+            <DialogHeader>
+              <DialogTitle className="text-xl font-bold bg-gradient-to-b from-white to-white/60 bg-clip-text text-transparent">
+                OpenAI Configuration
+              </DialogTitle>
+              <DialogDescription className="text-zinc-400">
+                Update connection settings for OpenAI-compatible backends
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-6 py-4 max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar">
+              {openAIOverview && (
+                <div className="rounded-xl border border-white/5 bg-white/5 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs font-semibold uppercase tracking-widest text-zinc-500">Current Setup</div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={applyOverviewToForm}
+                      className="text-xs h-7 hover:bg-white/5 hover:text-white"
+                    >
+                      Reset to Saved
+                    </Button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                    <div className="space-y-1">
+                      <div className="text-zinc-500">API Status</div>
+                      <div className="font-mono text-zinc-300 flex items-center gap-2">
+                        <div className={`w-1.5 h-1.5 rounded-full ${openAIOverview?.ENABLE_OPENAI_API ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+                        {openAIOverview?.ENABLE_OPENAI_API ? 'Enabled' : 'Disabled'}
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-zinc-500">Endpoints</div>
+                      <div className="font-mono text-zinc-300 truncate">
+                        {Array.isArray(openAIOverview?.OPENAI_API_BASE_URLS)
+                          ? openAIOverview.OPENAI_API_BASE_URLS[0] || 'N/A'
+                          : 'N/A'}
+                        {Array.isArray(openAIOverview?.OPENAI_API_BASE_URLS) && openAIOverview.OPENAI_API_BASE_URLS.length > 1 && ` (+${openAIOverview.OPENAI_API_BASE_URLS.length - 1} more)`}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between p-4 bg-white/5 border border-white/5 rounded-xl">
+                <div className="space-y-0.5">
+                  <div className="font-semibold text-sm">Enabled Gateway</div>
+                  <div className="text-xs text-zinc-500">Allow AI traffic through this provider</div>
+                </div>
+                <Switch checked={enableOpenAI} onCheckedChange={setEnableOpenAI} />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="openai-base-urls" className="text-zinc-400 text-xs uppercase tracking-wider ml-1">Base URLs</Label>
+                <Textarea
+                  id="openai-base-urls"
+                  placeholder="https://api.openai.com/v1"
+                  value={openAIBaseUrlsText}
+                  onChange={(e) => setOpenAIBaseUrlsText(e.target.value)}
+                  className="bg-black/50 border-white/5 focus:border-purple-500/50 min-h-[80px]"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="openai-keys" className="text-zinc-400 text-xs uppercase tracking-wider ml-1">API Keys</Label>
+                <Textarea
+                  id="openai-keys"
+                  placeholder="sk-..."
+                  value={openAIKeysText}
+                  onChange={(e) => setOpenAIKeysText(e.target.value)}
+                  className="bg-black/50 border-white/5 focus:border-purple-500/50 min-h-[80px]"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="openai-configs" className="text-zinc-400 text-xs uppercase tracking-wider ml-1">Advanced Config (JSON)</Label>
+                <Textarea
+                  id="openai-configs"
+                  placeholder='{}'
+                  value={openAIConfigsJson}
+                  onChange={(e) => setOpenAIConfigsJson(e.target.value)}
+                  className="bg-black/50 border-white/5 focus:border-purple-500/50 min-h-[120px] font-mono text-xs"
+                />
+              </div>
+
+              <Button
+                onClick={handleSaveOpenAIConfig}
+                disabled={isSavingOpenAIConfig}
+                className="w-full bg-white text-black hover:bg-zinc-200 font-bold h-11 shadow-[0_4px_15px_rgba(255,255,255,0.1)] transition-all"
+              >
+                {isSavingOpenAIConfig ? 'Synchronizing...' : 'Update Configuration'}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <Card className="bg-white/5 border-white/10 backdrop-blur-sm overflow-hidden">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-xl font-bold text-white">Available Models</CardTitle>
+          <CardDescription className="text-zinc-400">Configure visible intelligence options for users</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-2">
+        <CardContent className="space-y-3 px-6 pb-6">
           {models.map((model) => (
             <div
               key={model.id}
@@ -260,100 +380,8 @@ export function ModelConfiguration({
         </CardContent>
       </Card>
 
-      <Card className="bg-card border-border">
-        <CardHeader>
-          <CardTitle className="text-lg">OpenAI Configuration</CardTitle>
-          <CardDescription>
-            Update OpenAI backend settings via <span className="font-mono">/openai/config/update</span>
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {openAIOverview && (
-            <div className="rounded-lg border border-border bg-accent/20 p-3 space-y-2">
-              <div className="flex items-center justify-between gap-3">
-                <div className="font-medium">Saved Overview</div>
-                <Button variant="outline" size="sm" onClick={applyOverviewToForm}>
-                  Edit saved config
-                </Button>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                <div>
-                  <div className="text-xs text-muted-foreground">ENABLE_OPENAI_API</div>
-                  <div className="font-mono">{String(!!openAIOverview?.ENABLE_OPENAI_API)}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-muted-foreground">OPENAI_API_BASE_URLS</div>
-                  <div className="font-mono break-words">
-                    {Array.isArray(openAIOverview?.OPENAI_API_BASE_URLS)
-                      ? openAIOverview.OPENAI_API_BASE_URLS.join(', ')
-                      : ''}
-                  </div>
-                </div>
-                <div className="md:col-span-2">
-                  <div className="text-xs text-muted-foreground">OPENAI_API_KEYS</div>
-                  <div className="font-mono break-words">
-                    {Array.isArray(openAIOverview?.OPENAI_API_KEYS)
-                      ? openAIOverview.OPENAI_API_KEYS.map((k: string) => maskKey(k)).join(', ')
-                      : ''}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div className="flex items-center justify-between gap-4 p-3 bg-accent/30 rounded-lg">
-            <div>
-              <div className="font-medium">ENABLE_OPENAI_API</div>
-              <div className="text-xs text-muted-foreground">Turn OpenAI integration on/off</div>
-            </div>
-            <Switch checked={enableOpenAI} onCheckedChange={setEnableOpenAI} />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="openai-base-urls">OPENAI_API_BASE_URLS</Label>
-            <Textarea
-              id="openai-base-urls"
-              placeholder="One URL per line (or comma-separated)"
-              value={openAIBaseUrlsText}
-              onChange={(e) => setOpenAIBaseUrlsText(e.target.value)}
-              className="bg-background"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="openai-keys">OPENAI_API_KEYS</Label>
-            <Textarea
-              id="openai-keys"
-              placeholder="One key per line (or comma-separated)"
-              value={openAIKeysText}
-              onChange={(e) => setOpenAIKeysText(e.target.value)}
-              className="bg-background"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="openai-configs">OPENAI_API_CONFIGS (JSON)</Label>
-            <Textarea
-              id="openai-configs"
-              placeholder='{\n  "additionalProp1": {}\n}'
-              value={openAIConfigsJson}
-              onChange={(e) => setOpenAIConfigsJson(e.target.value)}
-              className="bg-background font-mono"
-            />
-          </div>
-
-          <Button onClick={handleSaveOpenAIConfig} disabled={isSavingOpenAIConfig} className="w-full">
-            {isSavingOpenAIConfig ? 'Saving...' : 'Save OpenAI Config'}
-          </Button>
-        </CardContent>
-      </Card>
-
-      <div className="text-xs text-muted-foreground bg-accent/30 p-3 rounded-lg">
-        <p>
-          <strong>Note:</strong> To persist these settings and enable real AI
-          functionality, please connect to a backend service.
-        </p>
+      <div className="text-[10px] text-zinc-600 bg-white/5 p-4 rounded-xl border border-white/5 uppercase tracking-[0.2em] text-center">
+        Secure Model Management &bull; Enterprise Protocol v2.1
       </div>
     </div>
   );

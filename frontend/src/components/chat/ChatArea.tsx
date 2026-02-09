@@ -13,9 +13,10 @@ interface ChatAreaProps {
   selectedModelName: string;
   selectedModel: string;
   onChangeModel: (modelId: string) => void;
+  disabled?: boolean;
 }
 
-export function ChatArea({ messages, onSend, isLoading, selectedModelName, selectedModel, onChangeModel }: ChatAreaProps) {
+export function ChatArea({ messages, onSend, isLoading, selectedModelName, selectedModel, onChangeModel, disabled }: ChatAreaProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
   const [recommendation, setRecommendation] = useState<any>(null);
@@ -82,6 +83,7 @@ export function ChatArea({ messages, onSend, isLoading, selectedModelName, selec
         <ChatInput
           onSend={handleSend}
           isLoading={isLoading}
+          disabled={disabled}
         />
       </div>
 

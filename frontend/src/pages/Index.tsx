@@ -39,7 +39,7 @@ const Index = () => {
   }, [user, authLoading, navigate]);
 
   const selectedModelName =
-    models.find((m) => m.id === selectedModel)?.name || 'JupiterBrains';
+    models.find((m) => m.id === selectedModel)?.name || (models.length > 0 ? 'JupiterBrains' : 'No models available');
 
   const handleSignOut = async () => {
     setIsSigningOut(true);
@@ -113,6 +113,7 @@ const Index = () => {
             selectedModelName={selectedModelName}
             selectedModel={selectedModel}
             onChangeModel={setSelectedModel}
+            disabled={models.length === 0}
           />
         </div>
       </div>

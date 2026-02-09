@@ -373,9 +373,16 @@ export function useChatStore() {
                           : Array.isArray(d?.payload?.models)
                             ? d.payload.models
                             : null;
-        if (!Array.isArray(rawModels) || rawModels.length === 0) {
+        if (!Array.isArray(rawModels)) {
           const cached = readCachedModels();
           if (cached) setModels(cached);
+          modelsFetchStartedRef.current = false;
+          return;
+        }
+
+        if (rawModels.length === 0) {
+          setModels([]);
+          writeCachedModels([]);
           modelsFetchStartedRef.current = false;
           return;
         }
@@ -402,20 +409,15 @@ export function useChatStore() {
           })
           .filter(Boolean) as AIModel[];
 
-        if (mapped.length === 0) {
-          const cached = readCachedModels();
-          if (cached) setModels(cached);
-          modelsFetchStartedRef.current = false;
-          return;
-        }
-
         setModels(mapped);
         writeCachedModels(mapped);
-        setSelectedModel((prev) => {
-          const enabled = mapped.filter((x) => x.enabled);
-          const available = enabled.length > 0 ? enabled : mapped;
-          return available.some((x) => x.id === prev) ? prev : available[0].id;
-        });
+        if (mapped.length > 0) {
+          setSelectedModel((prev) => {
+            const enabled = mapped.filter((x) => x.enabled);
+            const available = enabled.length > 0 ? enabled : mapped;
+            return available.some((x) => x.id === prev) ? prev : available[0].id;
+          });
+        }
       } catch {
         const cached = readCachedModels();
         if (cached) setModels(cached);
