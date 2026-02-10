@@ -8,15 +8,17 @@ import { ModelSuggestionDialog } from './ModelSuggestionDialog';
 
 interface ChatAreaProps {
   messages: Message[];
-  onSend: (message: string, modelOverride?: string) => Promise<any>;
+  onSend: (message: string, modelOverride?: string, slmEnabled?: boolean, slmDecision?: 'accept' | 'reject' | null) => Promise<any>;
   isLoading: boolean;
   selectedModelName: string;
   selectedModel: string;
   onChangeModel: (modelId: string) => void;
   disabled?: boolean;
+  showRecommendationPopup: boolean;
+  onToggleRecommendation: (value: boolean) => void;
 }
 
-export function ChatArea({ messages, onSend, isLoading, selectedModelName, selectedModel, onChangeModel, disabled }: ChatAreaProps) {
+export function ChatArea({ messages, onSend, isLoading, selectedModelName, selectedModel, onChangeModel, disabled, showRecommendationPopup, onToggleRecommendation }: ChatAreaProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
   const [recommendation, setRecommendation] = useState<any>(null);
@@ -98,16 +100,16 @@ export function ChatArea({ messages, onSend, isLoading, selectedModelName, selec
           if (recommendation && pendingMessage) {
             // Switch to selected model
             onChangeModel(modelId);
-            // Resend with modelOverride to skip recommendation and get AI response
-            await onSend(pendingMessage, modelId);
+            // Resend with recommended model - slm_decision is "accept"
+            await onSend(pendingMessage, modelId, showRecommendationPopup, 'accept');
           }
           setRecommendation(null);
           setPendingMessage(null);
         }}
         onCancel={async () => {
           if (pendingMessage) {
-            // Continue with current model - resend with modelOverride to skip recommendation
-            await onSend(pendingMessage, selectedModel);
+            // Continue with current model - slm_decision is "reject"
+            await onSend(pendingMessage, selectedModel, showRecommendationPopup, 'reject');
           }
           setRecommendation(null);
           setPendingMessage(null);
@@ -121,13 +123,33 @@ export function ChatArea({ messages, onSend, isLoading, selectedModelName, selec
 
   async function handleSend(message: string) {
     setPendingMessage(message);
-    const result = await onSend(message);
+    console.log('ChatArea: Sending message with slmEnabled =', showRecommendationPopup);
+    // Initial send - slm_decision is null
+    const result = await onSend(message, undefined, showRecommendationPopup, null);
+    console.log('ChatArea: Result from onSend =', result);
 
     // Check if result contains model recommendation
     if (result?.isRecommendation) {
-      setRecommendation(result.recommendation);
-      // Don't clear pending message - we'll use it when user chooses
+      const recommendedModel = result.recommendation?.recommended_model;
+      console.log('ChatArea: Recommendation received, showPopup =', showRecommendationPopup);
+
+      if (showRecommendationPopup) {
+        // Show popup for user to confirm
+        console.log('ChatArea: Setting recommendation state');
+        setRecommendation(result.recommendation);
+        // Don't clear pending message - we'll use it when user chooses
+      } else {
+        // Auto-switch to recommended model without popup
+        console.log('ChatArea: Auto-switching to model =', recommendedModel);
+        if (recommendedModel) {
+          onChangeModel(recommendedModel);
+          // Resend with recommended model - slm_decision is "accept"
+          await onSend(message, recommendedModel, showRecommendationPopup, 'accept');
+        }
+        setPendingMessage(null);
+      }
     } else {
+      console.log('ChatArea: No recommendation received or direct response given');
       setPendingMessage(null);
     }
   }

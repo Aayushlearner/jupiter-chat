@@ -33,11 +33,6 @@ export function ModelSuggestionDialog({
   reason,
   alternatives = [],
 }: ModelSuggestionDialogProps) {
-  // Use alternatives if available, otherwise fallback to single suggested model
-  const modelsToShow = alternatives.length > 0
-    ? alternatives
-    : [{ id: suggestedModel, name: suggestedModel, recommended_for: '' }];
-
   return (
     <AlertDialog open={isOpen} onOpenChange={onClose}>
       <AlertDialogContent className="bg-[#1a1a1a] border-gray-700 max-w-md">
@@ -50,22 +45,19 @@ export function ModelSuggestionDialog({
           </AlertDialogDescription>
         </AlertDialogHeader>
 
-        <div className="space-y-2 mt-4">
-          <p className="text-sm text-gray-400 font-medium">Recommended Models:</p>
-          {modelsToShow.map((model) => (
-            <button
-              key={model.id}
-              onClick={() => onConfirm(model.id)}
-              className="w-full bg-white/5 hover:bg-white/10 text-white border border-gray-600 hover:border-gray-500 py-3 px-4 rounded-lg text-left transition-colors"
-            >
-              <div className="font-semibold">{model.name}</div>
-              {model.recommended_for && (
-                <div className="text-xs text-gray-400 mt-1">
-                  Best for: {model.recommended_for}
-                </div>
-              )}
-            </button>
-          ))}
+        <div className="space-y-3 mt-4">
+          <p className="text-sm text-gray-400 font-medium">Recommended Model:</p>
+          <button
+            onClick={() => onConfirm(suggestedModel)}
+            className="w-full bg-purple-500/20 hover:bg-purple-500/30 text-white border border-purple-500 py-4 px-4 rounded-lg text-left transition-colors"
+          >
+            <div className="flex items-center justify-between">
+              <div className="font-semibold text-lg">{suggestedModel}</div>
+              <span className="text-xs bg-purple-500 text-white px-2 py-1 rounded">
+                Recommended
+              </span>
+            </div>
+          </button>
         </div>
 
         <AlertDialogFooter className="mt-4">

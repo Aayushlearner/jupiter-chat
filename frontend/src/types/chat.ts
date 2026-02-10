@@ -21,6 +21,7 @@ export interface AIModel {
   enabled: boolean;
   icon?: string;
   rawData?: any;
+  isSaved?: boolean;
 }
 
 export const DEFAULT_MODELS: AIModel[] = [

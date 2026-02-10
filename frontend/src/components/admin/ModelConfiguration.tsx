@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Trash2, GripVertical, Settings2, ExternalLink } from 'lucide-react';
+import { Trash2, GripVertical, Settings2, ExternalLink, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { AIModel } from '@/types/chat';
@@ -228,118 +228,137 @@ export function ModelConfiguration({
   const defaultModelIds = ['jupiterbrains', 'chatgpt', 'claude', 'gemini', 'random'];
 
   const handleModelToggle = async (model: AIModel, enabled: boolean) => {
-    // Optimistically update UI
+    // Update UI state immediately
     onUpdateModel(model.id, { enabled });
 
-    // If enabling, persist to backend
-    if (enabled && model.rawData) {
+    try {
+      const rawData = model.rawData;
+      if (!rawData) {
+        toast.error('Model data not available');
+        return;
+      }
+
+      // Check if model exists in database
+      let modelExistsInDB = false;
       try {
-        const createUrl = API_ENDPOINTS.models.create();
-        const rawData = model.rawData;
-
-        // Construct payload matching the backend structure
-        const payload = {
-          id: rawData.id || model.id,
-          name: rawData.name || model.name,
-          base_model_id: rawData.base_model_id || null,
-          params: rawData.params || {},
-          meta: {
-            profile_image_url: rawData.meta?.profile_image_url || rawData.profile_image_url || '/static/favicon.png',
-            description: rawData.meta?.description || rawData.description || null,
-            capabilities: rawData.meta?.capabilities || rawData.capabilities || {
-              file_context: true,
-              vision: true,
-              file_upload: true,
-              web_search: true,
-              image_generation: true,
-              code_interpreter: true,
-              citations: true,
-              status_updates: true,
-              builtin_tools: true,
-            },
-            suggestion_prompts: rawData.meta?.suggestion_prompts || rawData.suggestion_prompts || null,
-            tags: rawData.meta?.tags || rawData.tags || [],
-          },
-          access_control: rawData.access_control || null,
-          is_active: true,
-          active: true,
-          connection_type: rawData.connection_type || 'external',
-          context_window: rawData.context_window || 4096,
-          max_completion_tokens: rawData.max_completion_tokens || 4096,
-          created: rawData.created || Math.floor(Date.now() / 1000),
-          object: rawData.object || 'model',
-          owned_by: rawData.owned_by || rawData.openai?.owned_by || 'openai',
-          public_apps: rawData.public_apps || null,
-          urlIdx: rawData.urlIdx || 1,
-          openai: rawData.openai || {
-            id: rawData.id || model.id,
-            object: 'model',
-            created: rawData.created || Math.floor(Date.now() / 1000),
-            owned_by: rawData.owned_by || 'openai',
-            active: true,
-            connection_type: rawData.connection_type || 'external',
-            context_window: rawData.context_window || 4096,
-            max_completion_tokens: rawData.max_completion_tokens || 4096,
-          },
-        };
-
-        const res = await fetch(createUrl, {
-          method: 'POST',
+        const checkRes = await fetch(API_ENDPOINTS.models.base(), {
+          method: 'GET',
           headers: {
             'Content-Type': 'application/json',
             Accept: 'application/json',
             ...getStoredAuthHeader(),
           },
           credentials: 'include',
-          body: JSON.stringify(payload),
         });
 
-        if (!res.ok) {
-          const data = await res.json().catch(() => null);
-          const message = data?.detail || data?.message || `Failed to save model (HTTP ${res.status})`;
-          toast.error(message);
-          // Revert on error
-          onUpdateModel(model.id, { enabled: false });
-          return;
+        if (checkRes.ok) {
+          const existingModels = await checkRes.json();
+          modelExistsInDB = existingModels.some((m: any) => m.id === (rawData.id || model.id));
         }
-
-        toast.success(`Model "${model.name}" saved to database`);
-
-        // Fetch updated base models list
-        try {
-          const baseUrl = API_ENDPOINTS.models.base();
-          const baseRes = await fetch(baseUrl, {
-            method: 'GET',
-            headers: {
-              Accept: 'application/json',
-              ...getStoredAuthHeader(),
-            },
-            credentials: 'include',
-          });
-
-          if (baseRes.ok) {
-            const baseModels = await baseRes.json();
-            console.log('Updated base models:', baseModels);
-            // Optionally refresh the models list
-            if (onRefreshModels) {
-              await onRefreshModels();
-            }
-          }
-        } catch (err) {
-          console.error('Failed to fetch base models:', err);
-          // Don't show error to user as the model was saved successfully
-        }
-      } catch (err: any) {
-        console.error('Model creation error:', err);
-        toast.error(err?.message || 'Failed to save model');
-        // Revert on error - keep the toggle OFF
-        onUpdateModel(model.id, { enabled: false });
+      } catch (err) {
+        console.warn('Failed to check model existence:', err);
       }
-    } else if (!enabled) {
-      // When disabling, just update UI state (don't delete from backend)
-      toast.info(`Model "${model.name}" disabled locally`);
+
+      // Choose API based on existence
+      const apiUrl = modelExistsInDB ? API_ENDPOINTS.models.update() : API_ENDPOINTS.models.create();
+      console.log(`Toggle: "${model.name}" exists=${modelExistsInDB}, using ${modelExistsInDB ? 'UPDATE' : 'CREATE'}`);
+
+      // Build payload
+      const basePayload = {
+        id: rawData.id || model.id,
+        name: rawData.name || model.name,
+        base_model_id: rawData.base_model_id || null,
+        params: rawData.params || {},
+        meta: {
+          profile_image_url: rawData.meta?.profile_image_url || rawData.profile_image_url || '/static/favicon.png',
+          description: rawData.meta?.description || rawData.description || null,
+          capabilities: rawData.meta?.capabilities || rawData.capabilities || {
+            file_context: true,
+            vision: true,
+            file_upload: true,
+            web_search: true,
+            image_generation: true,
+            code_interpreter: true,
+            citations: true,
+            status_updates: true,
+            builtin_tools: true,
+          },
+          suggestion_prompts: rawData.meta?.suggestion_prompts || rawData.suggestion_prompts || null,
+          tags: rawData.meta?.tags || rawData.tags || [],
+        },
+        is_active: true,
+        active: true,
+        connection_type: rawData.connection_type || 'external',
+        context_window: rawData.context_window || 4096,
+        max_completion_tokens: rawData.max_completion_tokens || 4096,
+        created: rawData.created || Math.floor(Date.now() / 1000),
+        object: rawData.object || 'model',
+        owned_by: rawData.owned_by || rawData.openai?.owned_by || 'openai',
+        public_apps: rawData.public_apps || null,
+        urlIdx: rawData.urlIdx || 0,
+        openai: rawData.openai || {
+          id: rawData.id || model.id,
+          object: 'model',
+          created: rawData.created || Math.floor(Date.now() / 1000),
+          owned_by: rawData.owned_by || 'openai',
+          active: true,
+          connection_type: rawData.connection_type || 'external',
+          context_window: rawData.context_window || 4096,
+          max_completion_tokens: rawData.max_completion_tokens || 4096,
+        },
+      };
+
+      const payload = enabled
+        ? { ...basePayload, access_control: null }
+        : {
+          ...basePayload,
+          access_control: {
+            read: { group_ids: [], user_ids: [] },
+            write: { group_ids: [], user_ids: [] },
+          },
+        };
+
+      const res = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          ...getStoredAuthHeader(),
+        },
+        credentials: 'include',
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        const message = data?.detail || data?.message || `Failed (HTTP ${res.status})`;
+        toast.error(message);
+        return;
+      }
+
+      toast.success(`"${model.name}" ${enabled ? 'enabled (public)' : 'disabled (private)'}!`);
+
+      // Refresh models first
+      // Disabled to prevent overwriting previously enabled models
+      // if (onRefreshModels) await onRefreshModels();
+
+      // Then update model's rawData with the enriched payload we just sent
+      // This ensures the model has 'meta' and 'access_control' fields locally
+      // and overwrites any basic data from the refresh
+      onUpdateModel(model.id, {
+        enabled,
+        rawData: {
+          ...model.rawData,
+          ...payload,
+        },
+      });
+    } catch (err: any) {
+      console.error('Toggle error:', err);
+      toast.error(err?.message || 'Failed to toggle model');
     }
   };
+
+
 
   return (
     <div className="space-y-6">
@@ -468,7 +487,9 @@ export function ModelConfiguration({
             >
               <GripVertical className="h-4 w-4 text-muted-foreground cursor-move" />
               <div className="flex-1 min-w-0">
-                <div className="font-medium truncate">{model.name}</div>
+                <div className="font-medium truncate">
+                  {model.name}
+                </div>
                 <div className="text-xs text-muted-foreground truncate">
                   {model.description}
                 </div>
@@ -479,6 +500,7 @@ export function ModelConfiguration({
                   handleModelToggle(model, enabled)
                 }
               />
+
               {!defaultModelIds.includes(model.id) && (
                 <Button
                   variant="ghost"
@@ -494,9 +516,11 @@ export function ModelConfiguration({
         </CardContent>
       </Card>
 
+
       <div className="text-[10px] text-zinc-600 bg-white/5 p-4 rounded-xl border border-white/5 uppercase tracking-[0.2em] text-center">
         Secure Model Management &bull; Enterprise Protocol v2.1
       </div>
+
     </div>
   );
 }

@@ -1,6 +1,7 @@
-import { PanelLeft } from 'lucide-react';
+import { PanelLeft, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ModelSelector } from './ModelSelector';
+import { Switch } from '@/components/ui/switch';
 import { AIModel } from '@/types/chat';
 
 interface ChatHeaderProps {
@@ -10,6 +11,8 @@ interface ChatHeaderProps {
   onOpenModels?: () => void;
   onOpenSidebar: () => void;
   isSidebarOpen: boolean;
+  showRecommendationPopup: boolean;
+  onToggleRecommendation: (value: boolean) => void;
 }
 
 export function ChatHeader({
@@ -19,6 +22,8 @@ export function ChatHeader({
   onOpenModels,
   onOpenSidebar,
   isSidebarOpen,
+  showRecommendationPopup,
+  onToggleRecommendation,
 }: ChatHeaderProps) {
   return (
     <header className="flex items-center gap-2 px-3 py-2 border-b border-border bg-background/80 backdrop-blur-sm">
@@ -40,6 +45,16 @@ export function ChatHeader({
           if (open) onOpenModels?.();
         }}
       />
+
+      {/* AI Recommendation Toggle */}
+      <div className="ml-auto flex items-center gap-2">
+        <Sparkles className="h-4 w-4 text-purple-400" />
+        <Switch
+          checked={showRecommendationPopup}
+          onCheckedChange={onToggleRecommendation}
+          className="data-[state=checked]:bg-purple-500"
+        />
+      </div>
     </header>
   );
 }

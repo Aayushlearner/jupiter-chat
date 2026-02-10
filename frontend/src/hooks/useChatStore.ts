@@ -401,11 +401,35 @@ export function useChatStore() {
 
             const id = String(m?.id ?? m?.model ?? m?.key ?? m?.value ?? m?.name ?? '').trim();
             if (!id) return null;
+
+            // Explicit check for access_control property existence and value
+            // - Property doesn't exist (unsaved model) -> Disabled
+            // - Property exists and is null (public model) -> Enabled
+            // - Property exists and is object (private model) -> Disabled
+            let isEnabled = false;
+
+            if ('access_control' in m) {
+              // Property exists - model is saved
+              if (m.access_control === null) {
+                isEnabled = true; // Public
+              } else {
+                isEnabled = false; // Private
+              }
+            } else {
+              // Property doesn't exist - unsaved model
+              isEnabled = false;
+            }
+
+            // Override with explicit enabled flag if present
+            if (typeof m?.enabled === 'boolean') {
+              isEnabled = m.enabled;
+            }
+
             return {
               id,
               name: String(m?.name ?? id),
               description: String(m?.description ?? m?.desc ?? 'Model'),
-              enabled: false,
+              enabled: isEnabled,
               rawData: m,
             };
           })
@@ -562,7 +586,12 @@ export function useChatStore() {
     }
   }, [currentSessionId]);
 
-  const sendMessage = useCallback(async (content: string, modelOverride?: string) => {
+  const sendMessage = useCallback(async (
+    content: string,
+    modelOverride?: string,
+    slmEnabled: boolean = true,
+    slmDecision: 'accept' | 'reject' | null = null
+  ) => {
     let session = currentSession;
 
     if (!session) {
@@ -703,14 +732,14 @@ export function useChatStore() {
           model: modelToUse,
           messages: history,
           session_id: session?.id,
-          // If modelOverride is set, user chose to continue with current model
-          // Add metadata to bypass SLM recommendation and get direct LLM response
-          ...(modelOverride && {
-            metadata: {
-              slm_decision: 'reject',
-              slm_bypass: true,
-            },
-          }),
+          stream: false,
+          metadata: {
+            slm_enabled: slmEnabled,
+            slm_decision: slmDecision,
+            slm_processed: false,
+            user_id: session?.id || 'anonymous',
+            session_id: session?.id || generateId(),
+          },
         }),
       });
 
@@ -737,46 +766,58 @@ export function useChatStore() {
             }
           };
         }
-
         throw new Error(errorMsg);
       }
 
       const d: any = data as any;
+      const payload = d?.data || d;
+
+      // Debug logging
+      console.log('useChatStore: Raw API Response =', d);
+      console.log('useChatStore: Payload to check =', payload);
+      console.log('useChatStore: Payload type field =', payload?.type);
+      console.log('useChatStore: Has recommended_model =', !!payload?.recommended_model);
+      console.log('useChatStore: Model override present =', !!modelOverride);
+      console.log('useChatStore: SLM enabled =', slmEnabled);
 
       // Check if response is a model recommendation
-      // BUT: If modelOverride is provided, user already made a choice, so ignore recommendation
-      if (d?.type === 'model_recommendation' && !modelOverride) {
-        // Don't remove user message - keep it and just show popup
+      // We check for several indicators of a recommendation
+      const isRecommendation = (
+        payload?.type === 'model_recommendation' ||
+        payload?.recommended_model ||
+        payload?.recommendation ||
+        payload?.is_recommendation ||
+        payload?.intent // Sometimes used in recommendations
+      ) && !modelOverride;
+
+      if (isRecommendation) {
+        console.log('useChatStore: Model recommendation detected! Returning to ChatArea.');
         // Return recommendation to caller (ChatArea will handle popup)
         return {
           isRecommendation: true,
-          recommendation: d,
+          recommendation: payload,
         };
       }
 
-      // Extract AI response - backend now handles modelOverride properly
+      console.log('useChatStore: Not a recommendation, processing as AI response');
+
+      // Extract AI response - check root and .data
       const aiText =
-        typeof d === 'string'
-          ? d
-          : typeof d?.content === 'string'
-            ? d.content
-            : typeof d?.message === 'string'
-              ? d.message
-              : typeof d?.response === 'string'
-                ? d.response
-                : typeof d?.text === 'string'
-                  ? d.text
-                  : typeof d?.data?.content === 'string'
-                    ? d.data.content
-                    : typeof d?.data?.message === 'string'
-                      ? d.data.message
-                      : typeof d?.data?.response === 'string'
-                        ? d.data.response
-                        : typeof d?.choices?.[0]?.message?.content === 'string'
-                          ? d.choices[0].message.content
-                          : typeof d?.choices?.[0]?.text === 'string'
-                            ? d.choices[0].text
-                            : '';
+        typeof payload === 'string'
+          ? payload
+          : typeof payload?.content === 'string'
+            ? payload.content
+            : typeof payload?.message === 'string'
+              ? payload.message
+              : typeof payload?.response === 'string'
+                ? payload.response
+                : typeof payload?.text === 'string'
+                  ? payload.text
+                  : typeof payload?.choices?.[0]?.message?.content === 'string'
+                    ? payload.choices[0].message.content
+                    : typeof payload?.choices?.[0]?.text === 'string'
+                      ? payload.choices[0].text
+                      : '';
 
       const assistantMessage: Message = {
         id: generateId(),

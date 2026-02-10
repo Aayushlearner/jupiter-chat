@@ -11,6 +11,7 @@ const Index = () => {
   const { user, isLoading: authLoading, isAdmin, signOut } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const [showRecommendationPopup, setShowRecommendationPopup] = useState(true);
 
   const {
     sessions,
@@ -102,6 +103,8 @@ const Index = () => {
           }}
           onOpenSidebar={() => setIsSidebarOpen(true)}
           isSidebarOpen={isSidebarOpen}
+          showRecommendationPopup={showRecommendationPopup}
+          onToggleRecommendation={setShowRecommendationPopup}
         />
 
         {/* Chat Area */}
@@ -114,6 +117,8 @@ const Index = () => {
             selectedModel={selectedModel}
             onChangeModel={setSelectedModel}
             disabled={models.length === 0}
+            showRecommendationPopup={showRecommendationPopup}
+            onToggleRecommendation={setShowRecommendationPopup}
           />
         </div>
       </div>
