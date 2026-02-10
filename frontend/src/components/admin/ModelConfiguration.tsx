@@ -338,9 +338,8 @@ export function ModelConfiguration({
 
       toast.success(`"${model.name}" ${enabled ? 'enabled (public)' : 'disabled (private)'}!`);
 
-      // Refresh models first
-      // Disabled to prevent overwriting previously enabled models
-      // if (onRefreshModels) await onRefreshModels();
+      // Refresh models to sync with backend
+      if (onRefreshModels) await onRefreshModels();
 
       // Then update model's rawData with the enriched payload we just sent
       // This ensures the model has 'meta' and 'access_control' fields locally

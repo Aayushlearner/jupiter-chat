@@ -2,6 +2,7 @@ import { PanelLeft, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ModelSelector } from './ModelSelector';
 import { Switch } from '@/components/ui/switch';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { AIModel } from '@/types/chat';
 
 interface ChatHeaderProps {
@@ -47,14 +48,23 @@ export function ChatHeader({
       />
 
       {/* AI Recommendation Toggle */}
-      <div className="ml-auto flex items-center gap-2">
-        <Sparkles className="h-4 w-4 text-purple-400" />
-        <Switch
-          checked={showRecommendationPopup}
-          onCheckedChange={onToggleRecommendation}
-          className="data-[state=checked]:bg-purple-500"
-        />
-      </div>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="ml-auto flex items-center gap-2 cursor-help">
+              <Sparkles className="h-4 w-4 text-white/70" />
+              <Switch
+                checked={showRecommendationPopup}
+                onCheckedChange={onToggleRecommendation}
+                className="data-[state=checked]:bg-white data-[state=unchecked]:bg-zinc-700"
+              />
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="bg-zinc-900 border-zinc-700">
+            <p className="text-sm max-w-xs">Get smart AI model suggestions tailored to your question. When enabled, the system recommends the best model for your query.</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     </header>
   );
 }

@@ -387,7 +387,7 @@ export function useChatStore() {
           return;
         }
 
-        const mapped: AIModel[] = rawModels
+        let mapped: AIModel[] = rawModels
           .map((m: any) => {
             if (typeof m === 'string') {
               return {
@@ -434,6 +434,35 @@ export function useChatStore() {
             };
           })
           .filter(Boolean) as AIModel[];
+
+        // Fetch enriched models to get access_control info
+        try {
+          const baseRes = await fetch(API_ENDPOINTS.models.base(), {
+            method: 'GET',
+            headers: { Accept: 'application/json', ...bearerHeader, ...apiKeyHeader },
+            credentials: 'include',
+          });
+
+          if (baseRes.ok) {
+            const baseModels = await baseRes.json().catch(() => null);
+            if (Array.isArray(baseModels)) {
+              mapped = mapped.map((model) => {
+                const enriched = baseModels.find((bm: any) => bm.id === model.id);
+                if (enriched && 'access_control' in enriched) {
+                  const isEnabled = enriched.access_control === null;
+                  return {
+                    ...model,
+                    enabled: isEnabled,
+                    rawData: { ...model.rawData, ...enriched },
+                  };
+                }
+                return model;
+              });
+            }
+          }
+        } catch (err) {
+          console.warn('Failed to fetch enriched models:', err);
+        }
 
         setModels(mapped);
         writeCachedModels(mapped);
