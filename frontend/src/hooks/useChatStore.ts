@@ -695,6 +695,25 @@ export function useChatStore() {
             setCurrentSessionId(backendId);
 
             console.log(`Session ID updated: ${oldSessionId} -> ${backendId}`);
+            console.log('Updated session object:', session);
+
+            // Call GET /chats/{id} to fetch the created chat details
+            try {
+              console.log('Fetching created chat details:', backendId);
+              const getChatResponse = await fetch(API_ENDPOINTS.chat.get(backendId), {
+                method: 'GET',
+                credentials: 'include',
+              });
+
+              if (getChatResponse.ok) {
+                const chatData = await getChatResponse.json();
+                console.log('Fetched chat data:', chatData);
+              } else {
+                console.warn('Failed to fetch chat details:', getChatResponse.status);
+              }
+            } catch (error) {
+              console.error('Error fetching chat details:', error);
+            }
 
             // Refresh chat list from backend to show new chat
             await loadChatsFromBackend();
@@ -707,6 +726,8 @@ export function useChatStore() {
         // Continue with local session
       }
     }
+
+    console.log('Session ID before completion API call:', session?.id);
 
     // Update session with user message (only if this is the first call, not a retry)
     // If modelOverride is provided, it means user made a choice from popup and message is already added
@@ -752,6 +773,28 @@ export function useChatStore() {
       // Use modelOverride if provided, otherwise use selectedModel
       const modelToUse = modelOverride || selectedModel;
 
+      const completionPayload = {
+        model: modelToUse,
+        messages: history,
+        chat_id: session?.id,  // Changed from session_id to chat_id
+        stream: false,
+        features: {
+          voice: false,
+          image_generation: imageGeneration,
+          code_interpreter: false,
+          web_search: false,
+        },
+        metadata: {
+          slm_enabled: slmEnabled,
+          slm_decision: slmDecision,
+          slm_processed: false,
+          user_id: session?.id || 'anonymous',
+        },
+      };
+
+      console.log('Completion API payload:', completionPayload);
+      console.log('Completion API chat_id:', completionPayload.chat_id);
+
       const res = await fetch(chatUrl, {
         method: 'POST',
         headers: {
@@ -761,25 +804,7 @@ export function useChatStore() {
           ...apiKeyHeader,
         },
         credentials: 'include',
-        body: JSON.stringify({
-          model: modelToUse,
-          messages: history,
-          session_id: session?.id,
-          stream: false,
-          features: {
-            voice: false,
-            image_generation: imageGeneration,
-            code_interpreter: false,
-            web_search: false,
-          },
-          metadata: {
-            slm_enabled: slmEnabled,
-            slm_decision: slmDecision,
-            slm_processed: false,
-            user_id: session?.id || 'anonymous',
-            session_id: session?.id || generateId(),
-          },
-        }),
+        body: JSON.stringify(completionPayload),
       });
 
       const data = await res.json().catch(() => null);
