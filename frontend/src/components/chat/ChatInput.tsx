@@ -75,6 +75,8 @@ export function ChatInput({ onSend, isLoading, disabled }: ChatInputProps) {
               onImageGenerationToggle={setImageGenerationEnabled}
             />
           </div>
+
+
         </div>
 
         {/* Text Input */}
