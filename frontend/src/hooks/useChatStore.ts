@@ -844,19 +844,75 @@ export function useChatStore() {
       console.log('Using Socket ID for session_id:', currentSocketId);
       const messageId = uuidv4();
 
+      // Get full model data for model_item
+      const currentModel = models.find(m => m.id === modelToUse);
+      const modelItem = currentModel?.rawData || {
+        id: modelToUse,
+        object: 'model',
+        created: Math.floor(Date.now() / 1000),
+        owned_by: 'openai',
+        active: true,
+        context_window: 4096,
+        max_completion_tokens: 4096,
+        connection_type: 'external',
+      };
+
+      // Generate datetime variables
+      const now = new Date();
+      const dateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
+      const timeStr = now.toTimeString().split(' ')[0]; // HH:MM:SS
+      const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      const weekday = weekdays[now.getDay()];
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const userLanguage = navigator.language || 'en-US';
+
+      // Get parent message (last message in history)
+      const parentMsg = session?.messages[session.messages.length - 1];
+      const parentId = parentMsg?.id || null;
+      const parentMessage = parentMsg ? {
+        id: parentMsg.id,
+        parentId: null,
+        childrenIds: [messageId],
+        role: parentMsg.role,
+        content: parentMsg.content,
+        timestamp: Math.floor(parentMsg.timestamp.getTime() / 1000),
+        ...(parentMsg.role === 'user' ? { models: [modelToUse] } : {}),
+      } : null;
+
       const completionPayload = {
+        stream: true,
         model: modelToUse,
         messages: history,
-        chat_id: session?.id,  // Backend chat ID
-        session_id: currentSocketId, // CRITICAL: Links API request to socket for streaming
-        id: messageId,
-        stream: true,
+        params: {},
+        tool_servers: [],
         features: {
           voice: false,
           image_generation: imageGeneration,
           code_interpreter: false,
           web_search: false,
         },
+        variables: {
+          '{{USER_NAME}}': 'admin', // TODO: Get from auth context
+          '{{USER_LOCATION}}': 'Unknown',
+          '{{CURRENT_DATETIME}}': `${dateStr} ${timeStr}`,
+          '{{CURRENT_DATE}}': dateStr,
+          '{{CURRENT_TIME}}': timeStr,
+          '{{CURRENT_WEEKDAY}}': weekday,
+          '{{CURRENT_TIMEZONE}}': timezone,
+          '{{USER_LANGUAGE}}': userLanguage,
+        },
+        model_item: modelItem,
+        session_id: currentSocketId, // CRITICAL: Links API request to socket for streaming
+        chat_id: session?.id,  // Backend chat ID
+        id: messageId,
+        parent_id: parentId,
+        ...(parentMessage ? { parent_message: parentMessage } : {}),
+        background_tasks: {
+          title_generation: true,
+          tags_generation: true,
+          follow_up_generation: true,
+        },
+        // Legacy metadata for backward compatibility
         metadata: {
           slm_enabled: slmEnabled,
           slm_decision: slmDecision,
