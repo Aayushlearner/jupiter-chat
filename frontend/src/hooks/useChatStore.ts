@@ -1,6 +1,8 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Message, ChatSession, AIModel, DEFAULT_MODELS } from '@/types/chat';
 import { getBackendBaseUrl, API_ENDPOINTS } from '@/utils/config';
+import { v4 as uuidv4 } from 'uuid';
+import { getSocket, getSocketId, disconnectSocket } from '@/utils/socket';
 
 const generateId = () => Math.random().toString(36).substring(2, 15);
 
@@ -148,6 +150,7 @@ export function useChatStore() {
     return (enabled.length > 0 ? enabled[0] : initialModels[0]).id;
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [socketId, setSocketId] = useState<string>('');
 
   // Save sessions whenever they change
   useEffect(() => {
@@ -158,6 +161,35 @@ export function useChatStore() {
   useEffect(() => {
     saveCurrentSessionId(currentSessionId);
   }, [currentSessionId]);
+
+  // Initialize Socket.IO connection on mount
+  useEffect(() => {
+    const socket = getSocket();
+
+    const handleConnect = () => {
+      const id = socket.id || '';
+      console.log('Socket connected, ID:', id);
+      setSocketId(id);
+    };
+
+    const handleDisconnect = () => {
+      console.log('Socket disconnected');
+      setSocketId('');
+    };
+
+    // If already connected, set the ID immediately
+    if (socket.connected && socket.id) {
+      setSocketId(socket.id);
+    }
+
+    socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
+
+    return () => {
+      socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
+    };
+  }, []);
 
   // Function to load/refresh chats from backend
   const loadChatsFromBackend = useCallback(async () => {
@@ -531,7 +563,9 @@ export function useChatStore() {
           // ignore
         });
       } else {
-        // On logout, set to cached or default models
+        // On logout, disconnect socket and set to cached or default models
+        disconnectSocket();
+        setSocketId('');
         setModels(readCachedModels() || DEFAULT_MODELS);
       }
     };
@@ -773,15 +807,50 @@ export function useChatStore() {
       // Use modelOverride if provided, otherwise use selectedModel
       const modelToUse = modelOverride || selectedModel;
 
-      // Generate a unique session ID for this chat session (persists for the session)
-      const sessionId = generateId() + '-' + Date.now().toString(36);
+      // CRITICAL LINK: Use Socket.IO socket ID as session_id
+      // This links the API request to the socket for streaming responses
+      let currentSocketId = socketId || getSocketId();
+      if (!currentSocketId) {
+        // Socket not connected, try to reconnect
+        console.warn('Socket not connected, attempting reconnection...');
+        const sock = getSocket();
+        // Wait briefly for connection
+        await new Promise<void>((resolve) => {
+          if (sock.connected && sock.id) {
+            currentSocketId = sock.id;
+            setSocketId(sock.id);
+            resolve();
+          } else {
+            const timeout = setTimeout(() => {
+              currentSocketId = sock.id || '';
+              if (currentSocketId) setSocketId(currentSocketId);
+              resolve();
+            }, 2000);
+            sock.once('connect', () => {
+              clearTimeout(timeout);
+              currentSocketId = sock.id || '';
+              if (currentSocketId) setSocketId(currentSocketId);
+              resolve();
+            });
+          }
+        });
+      }
+
+      if (!currentSocketId) {
+        console.error('Socket not connected! Cannot link API request to socket.');
+        throw new Error('Socket connection failed. Please check your connection and try again.');
+      }
+
+      console.log('Using Socket ID for session_id:', currentSocketId);
+      const messageId = uuidv4();
 
       const completionPayload = {
         model: modelToUse,
         messages: history,
         chat_id: session?.id,  // Backend chat ID
-        session_id: sessionId,  // WebSocket/session ID (separate from chat_id)
-        stream: false,
+        session_id: currentSocketId, // CRITICAL: Links API request to socket for streaming
+        id: messageId,
+        stream: true,
         features: {
           voice: false,
           image_generation: imageGeneration,
@@ -800,6 +869,7 @@ export function useChatStore() {
       console.log('Completion API chat_id:', completionPayload.chat_id);
       console.log('Completion API session_id:', completionPayload.session_id);
 
+      // --- STEP 1: Send the API request ---
       const res = await fetch(chatUrl, {
         method: 'POST',
         headers: {
@@ -838,63 +908,33 @@ export function useChatStore() {
         throw new Error(errorMsg);
       }
 
+      console.log('API ack received:', data);
+
+      // Check if the HTTP response itself contains a recommendation
       const d: any = data as any;
-      const payload = d?.data || d;
-
-      // Debug logging
-      console.log('useChatStore: Raw API Response =', d);
-      console.log('useChatStore: Payload to check =', payload);
-      console.log('useChatStore: Payload type field =', payload?.type);
-      console.log('useChatStore: Has recommended_model =', !!payload?.recommended_model);
-      console.log('useChatStore: Model override present =', !!modelOverride);
-      console.log('useChatStore: SLM enabled =', slmEnabled);
-
-      // Check if response is a model recommendation
-      // We check for several indicators of a recommendation
+      const ackPayload = d?.data || d;
       const isRecommendation = (
-        payload?.type === 'model_recommendation' ||
-        payload?.recommended_model ||
-        payload?.recommendation ||
-        payload?.is_recommendation ||
-        payload?.intent // Sometimes used in recommendations
+        ackPayload?.type === 'model_recommendation' ||
+        ackPayload?.recommended_model ||
+        ackPayload?.recommendation ||
+        ackPayload?.is_recommendation
       ) && !modelOverride;
 
       if (isRecommendation) {
-        console.log('useChatStore: Model recommendation detected! Returning to ChatArea.');
-        // Return recommendation to caller (ChatArea will handle popup)
-        return {
-          isRecommendation: true,
-          recommendation: payload,
-        };
+        console.log('useChatStore: Model recommendation detected!');
+        return { isRecommendation: true, recommendation: ackPayload };
       }
 
-      console.log('useChatStore: Not a recommendation, processing as AI response');
-
-      // Extract AI response - check root and .data
-      const aiText =
-        typeof payload === 'string'
-          ? payload
-          : typeof payload?.content === 'string'
-            ? payload.content
-            : typeof payload?.message === 'string'
-              ? payload.message
-              : typeof payload?.response === 'string'
-                ? payload.response
-                : typeof payload?.text === 'string'
-                  ? payload.text
-                  : typeof payload?.choices?.[0]?.message?.content === 'string'
-                    ? payload.choices[0].message.content
-                    : typeof payload?.choices?.[0]?.text === 'string'
-                      ? payload.choices[0].text
-                      : '';
-
+      // --- STEP 2: Create placeholder assistant message & listen for socket events ---
+      const assistantMsgId = generateId();
       const assistantMessage: Message = {
-        id: generateId(),
+        id: assistantMsgId,
         role: 'assistant',
-        content: aiText || 'No response',
+        content: '',  // Will be filled by streaming chunks
         timestamp: new Date(),
       };
 
+      // Add empty assistant message to UI immediately
       setSessions((prev) =>
         prev.map((s) => {
           if (s.id === session!.id) {
@@ -908,124 +948,228 @@ export function useChatStore() {
         })
       );
 
-      // Call /api/chat/completed to save the conversation
-      try {
-        const updatedMessages = [...session!.messages, assistantMessage];
+      // --- STEP 3: Listen for streaming events via Socket.IO ---
+      const sock = getSocket();
+      const sessionRef = session!;
+      const modelRef = modelToUse;
 
-        // Convert messages to backend format
-        const formattedMessages = updatedMessages.map(msg => ({
-          id: msg.id,
-          role: msg.role,
-          content: msg.content,
-          timestamp: Math.floor(msg.timestamp.getTime() / 1000), // Convert to Unix timestamp
-        }));
+      const streamResult = await new Promise<{ isRecommendation: boolean; recommendation?: any }>((resolve) => {
+        let streamedContent = '';
+        let receivedFiles: any[] = [];
+        let streamTimeout: ReturnType<typeof setTimeout>;
 
-        const completedPayload = {
-          model: modelToUse,
-          messages: formattedMessages,
-          chat_id: session!.id,
-          session_id: session!.id, // Using chat ID as session ID
-          id: assistantMessage.id,
-        };
+        // Safety timeout: resolve after 120s if no completion event received
+        streamTimeout = setTimeout(() => {
+          console.warn('Stream timeout reached (120s), finalizing message.');
+          sock.off('chat:events', handleChatEvent);
+          finalizeMessage();
+          resolve({ isRecommendation: false });
+        }, 120000);
 
-        console.log('Calling /api/chat/completed with payload:', completedPayload);
+        function updateAssistantContent(newContent: string) {
+          setSessions((prev) =>
+            prev.map((s) => {
+              if (s.id === sessionRef.id) {
+                return {
+                  ...s,
+                  messages: s.messages.map((m) =>
+                    m.id === assistantMsgId ? { ...m, content: newContent } : m
+                  ),
+                  updatedAt: new Date(),
+                };
+              }
+              return s;
+            })
+          );
+        }
 
-        const completedResponse = await fetch(API_ENDPOINTS.chat.completed(), {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          credentials: 'include',
-          body: JSON.stringify(completedPayload),
-        });
+        function finalizeMessage() {
+          // Update final content
+          const finalContent = streamedContent || 'No response';
+          updateAssistantContent(finalContent);
 
-        if (completedResponse.ok) {
-          const completedData = await completedResponse.json();
-          console.log('Chat saved successfully:', completedData);
+          // Call /api/chat/completed to save the conversation
+          const finalAssistantMessage: Message = {
+            id: assistantMsgId,
+            role: 'assistant',
+            content: finalContent,
+            timestamp: new Date(),
+          };
 
-          // Now call POST /api/v1/chats/{id} to update chat with history structure
-          try {
-            // Build messages object with parent-child relationships
-            const messagesObject: any = {};
-            const messagesArray: any[] = [];
-
-            updatedMessages.forEach((msg, index) => {
-              const isUser = msg.role === 'user';
-              const isAssistant = msg.role === 'assistant';
-
-              // Determine parent and children
-              const parentId = index > 0 ? updatedMessages[index - 1].id : null;
-              const childrenIds = index < updatedMessages.length - 1 ? [updatedMessages[index + 1].id] : [];
-
-              const messageObj: any = {
+          // Fire-and-forget: save to backend
+          (async () => {
+            try {
+              const updatedMessages = [...sessionRef.messages, finalAssistantMessage];
+              const formattedMessages = updatedMessages.map(msg => ({
                 id: msg.id,
-                parentId: parentId,
-                childrenIds: childrenIds,
                 role: msg.role,
                 content: msg.content,
                 timestamp: Math.floor(msg.timestamp.getTime() / 1000),
+              }));
+
+              const completedPayload = {
+                model: modelRef,
+                messages: formattedMessages,
+                chat_id: sessionRef.id,
+                session_id: currentSocketId,
+                id: assistantMsgId,
               };
 
-              if (isUser) {
-                messageObj.models = [modelToUse];
+              console.log('Calling /api/chat/completed');
+              const completedResponse = await fetch(API_ENDPOINTS.chat.completed(), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify(completedPayload),
+              });
+
+              if (completedResponse.ok) {
+                const completedData = await completedResponse.json();
+                console.log('Chat saved successfully:', completedData);
+
+                // Update chat with history structure
+                const messagesObject: any = {};
+                const messagesArray: any[] = [];
+
+                updatedMessages.forEach((msg, index) => {
+                  const parentId = index > 0 ? updatedMessages[index - 1].id : null;
+                  const childrenIds = index < updatedMessages.length - 1 ? [updatedMessages[index + 1].id] : [];
+
+                  const messageObj: any = {
+                    id: msg.id,
+                    parentId,
+                    childrenIds,
+                    role: msg.role,
+                    content: msg.content,
+                    timestamp: Math.floor(msg.timestamp.getTime() / 1000),
+                  };
+
+                  if (msg.role === 'user') messageObj.models = [modelRef];
+                  if (msg.role === 'assistant') {
+                    messageObj.model = modelRef;
+                    messageObj.modelName = modelRef;
+                    messageObj.modelIdx = 0;
+                    messageObj.done = true;
+                  }
+
+                  messagesObject[msg.id] = messageObj;
+                  messagesArray.push(messageObj);
+                });
+
+                const chatUpdatePayload = {
+                  chat: {
+                    title: sessionRef.title,
+                    models: [modelRef],
+                    history: { messages: messagesObject, currentId: assistantMsgId },
+                    messages: messagesArray,
+                    params: {},
+                    files: receivedFiles,
+                  },
+                };
+
+                await fetch(API_ENDPOINTS.chat.rename(sessionRef.id), {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  credentials: 'include',
+                  body: JSON.stringify(chatUpdatePayload),
+                });
               }
-
-              if (isAssistant) {
-                messageObj.model = modelToUse;
-                messageObj.modelName = modelToUse;
-                messageObj.modelIdx = 0;
-                messageObj.done = true;
-              }
-
-              messagesObject[msg.id] = messageObj;
-              messagesArray.push(messageObj);
-            });
-
-            const chatUpdatePayload = {
-              chat: {
-                title: session!.title,
-                models: [modelToUse],
-                history: {
-                  messages: messagesObject,
-                  currentId: assistantMessage.id,
-                },
-                messages: messagesArray,
-                params: {},
-                files: [],
-              },
-            };
-
-            console.log('Calling POST /api/v1/chats/' + session!.id);
-
-            const chatUpdateResponse = await fetch(API_ENDPOINTS.chat.rename(session!.id), {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              credentials: 'include',
-              body: JSON.stringify(chatUpdatePayload),
-            });
-
-            if (chatUpdateResponse.ok) {
-              const chatUpdateData = await chatUpdateResponse.json();
-              console.log('Chat updated with history successfully:', chatUpdateData);
-            } else {
-              console.error('Failed to update chat with history:', chatUpdateResponse.status);
+            } catch (error) {
+              console.error('Error saving completed chat:', error);
             }
-          } catch (historyError) {
-            console.error('Error updating chat with history:', historyError);
-          }
-        } else {
-          console.error('Failed to save completed chat:', completedResponse.status);
+          })();
         }
-      } catch (error) {
-        console.error('Error calling /api/chat/completed:', error);
-        // Don't fail the whole flow if this fails
-      }
 
-      return {
-        isRecommendation: false,
-      };
+        function handleChatEvent(event: any) {
+          if (!event || !event.data) return;
+
+          const type = event.data.type;
+          const eventData = event.data.data;
+
+          // 1. Text Streaming — append each chunk to the message
+          if (type === 'chat:message:delta') {
+            const chunk = eventData?.content || '';
+            streamedContent += chunk;
+            updateAssistantContent(streamedContent);
+          }
+
+          // 2. Completion — message is finished
+          if (type === 'chat:completion') {
+            console.log('Stream complete!');
+            clearTimeout(streamTimeout);
+            sock.off('chat:events', handleChatEvent);
+
+            // Check if catch-all completion event contains recommendation
+            if (eventData?.type === 'model_recommendation' || eventData?.is_recommendation) {
+              console.log('Completion event contained recommendation:', eventData);
+              // Remove the placeholder message
+              setSessions((prev) =>
+                prev.map((s) => {
+                  if (s.id === sessionRef.id) {
+                    return {
+                      ...s,
+                      messages: s.messages.filter(m => m.id !== assistantMsgId),
+                      updatedAt: new Date(),
+                    };
+                  }
+                  return s;
+                })
+              );
+              resolve({ isRecommendation: true, recommendation: eventData });
+              return;
+            }
+
+            finalizeMessage();
+            resolve({ isRecommendation: false });
+          }
+
+          // 3. Image files received
+          if (type === 'chat:message:files') {
+            const files = eventData?.files || [];
+            console.log('Images received:', files);
+            receivedFiles = files;
+            // Append image info to the message content
+            if (files.length > 0) {
+              const imageMarkdown = files
+                .map((f: any) => `![image](${f.url || f.path || ''})`)
+                .join('\n');
+              streamedContent += '\n' + imageMarkdown;
+              updateAssistantContent(streamedContent);
+            }
+          }
+
+          // 4. Model Recommendation received via socket
+          if (type === 'model_recommendation' || type === 'recommendation') {
+            console.log('Socket received model recommendation:', eventData);
+            clearTimeout(streamTimeout);
+            sock.off('chat:events', handleChatEvent);
+
+            // Remove the placeholder message since we're showing a popup instead
+            setSessions((prev) =>
+              prev.map((s) => {
+                if (s.id === sessionRef.id) {
+                  return {
+                    ...s,
+                    messages: s.messages.filter(m => m.id !== assistantMsgId),
+                    updatedAt: new Date(),
+                  };
+                }
+                return s;
+              })
+            );
+
+            resolve({
+              isRecommendation: true,
+              recommendation: eventData
+            });
+          }
+        }
+
+        // Start listening
+        sock.on('chat:events', handleChatEvent);
+      });
+
+      return streamResult;
     } catch (e: any) {
       const assistantMessage: Message = {
         id: generateId(),
