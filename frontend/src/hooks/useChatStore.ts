@@ -149,7 +149,16 @@ export function useChatStore() {
     return (enabled.length > 0 ? enabled[0] : initialModels[0]).id;
   });
   const [isLoading, setIsLoading] = useState(false);
-  const [socketId, setSocketId] = useState<string>('');
+
+  // Generate a pseudo socket-style session ID once per store mount.
+  // Format mirrors Socket.IO IDs (e.g. "uDh1yulWt-cerioCAAAN") so the backend
+  // accepts it without requiring a real WebSocket connection.
+  const [pseudoSessionId] = useState<string>(() => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    const part1 = Array.from({ length: 9 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+    const part2 = Array.from({ length: 12 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+    return `${part1}-${part2}`;
+  });
 
   // Save sessions whenever they change
   useEffect(() => {
@@ -160,35 +169,6 @@ export function useChatStore() {
   useEffect(() => {
     saveCurrentSessionId(currentSessionId);
   }, [currentSessionId]);
-
-  // Initialize Socket.IO connection on mount
-  useEffect(() => {
-    const socket = getSocket();
-
-    const handleConnect = () => {
-      const id = socket.id || '';
-      console.log('Socket connected, ID:', id);
-      setSocketId(id);
-    };
-
-    const handleDisconnect = () => {
-      console.log('Socket disconnected');
-      setSocketId('');
-    };
-
-    // If already connected, set the ID immediately
-    if (socket.connected && socket.id) {
-      setSocketId(socket.id);
-    }
-
-    socket.on('connect', handleConnect);
-    socket.on('disconnect', handleDisconnect);
-
-    return () => {
-      socket.off('connect', handleConnect);
-      socket.off('disconnect', handleDisconnect);
-    };
-  }, []);
 
   // Function to load/refresh chats from backend
   const loadChatsFromBackend = useCallback(async () => {
@@ -562,9 +542,7 @@ export function useChatStore() {
           // ignore
         });
       } else {
-        // On logout, disconnect socket and set to cached or default models
-        disconnectSocket();
-        setSocketId('');
+        // On logout, reset to cached or default models
         setModels(readCachedModels() || DEFAULT_MODELS);
       }
     };
@@ -798,7 +776,9 @@ export function useChatStore() {
       const bearerHeader = authValue ? { Authorization: authValue } : {};
       const apiKeyHeader = MODELS_API_KEY ? { [MODELS_API_KEY_HEADER]: MODELS_API_KEY } : {};
 
-      const history = [...(session?.messages || []), userMessage].map((m) => ({
+      // Only send the new user message - backend already has conversation history
+      // Don't include session.messages as that causes duplicates on subsequent calls
+      const history = [userMessage].map((m) => ({
         role: m.role,
         content: m.content,
       }));
@@ -806,18 +786,51 @@ export function useChatStore() {
       // Use modelOverride if provided, otherwise use selectedModel
       const modelToUse = modelOverride || selectedModel;
 
-      // Generate a unique session ID for this chat session (persists for the session)
-      const sessionId = generateId() + '-' + Date.now().toString(36);
       const messageId = uuidv4();
+
+      // Build datetime variables (dynamic)
+      const now = new Date();
+      const dateStr = now.toISOString().slice(0, 10); // YYYY-MM-DD
+      const timeStr = now.toTimeString().slice(0, 8);  // HH:MM:SS
+      const datetimeStr = `${dateStr} ${timeStr}`;
+      const weekday = now.toLocaleDateString('en-US', { weekday: 'long' });
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const userLanguage = navigator.language || 'en';
+
+      // Get user name from localStorage (dynamic)
+      const getUserName = (): string => {
+        try {
+          const raw = localStorage.getItem('jb_static_auth');
+          if (!raw) return 'User';
+          const parsed = JSON.parse(raw);
+          return parsed?.name || parsed?.email || 'User';
+        } catch {
+          return 'User';
+        }
+      };
+
+      // Get full model item from models list (dynamic — rawData contains the backend model object)
+      const modelItem = models.find(m => m.id === modelToUse)?.rawData || { id: modelToUse };
+
+      // Build parent message in backend format (dynamic — the user message just sent)
+      const parentMessage = {
+        id: userMessage.id,
+        parentId: session?.messages.length > 0
+          ? session.messages[session.messages.length - 1].id
+          : null,
+        childrenIds: [messageId],
+        role: 'user' as const,
+        content: userMessage.content,
+        timestamp: Math.floor(userMessage.timestamp.getTime() / 1000),
+        models: [modelToUse],
+      };
 
       const completionPayload = {
         stream: true,
         model: modelToUse,
         messages: history,
-        id: messageId,
-        chat_id: session?.id,  // Backend chat ID
-        session_id: sessionId,  // WebSocket/session ID (separate from chat_id)
-        stream: false,
+        params: {},
+        tool_servers: [],
         features: {
           voice: false,
           image_generation: imageGeneration,
@@ -825,9 +838,9 @@ export function useChatStore() {
           web_search: false,
         },
         variables: {
-          '{{USER_NAME}}': 'admin', // TODO: Get from auth context
+          '{{USER_NAME}}': getUserName(),
           '{{USER_LOCATION}}': 'Unknown',
-          '{{CURRENT_DATETIME}}': `${dateStr} ${timeStr}`,
+          '{{CURRENT_DATETIME}}': datetimeStr,
           '{{CURRENT_DATE}}': dateStr,
           '{{CURRENT_TIME}}': timeStr,
           '{{CURRENT_WEEKDAY}}': weekday,
@@ -835,17 +848,17 @@ export function useChatStore() {
           '{{USER_LANGUAGE}}': userLanguage,
         },
         model_item: modelItem,
-        session_id: currentSocketId, // CRITICAL: Links API request to socket for streaming
-        chat_id: session?.id,  // Backend chat ID
+        session_id: pseudoSessionId,
+        chat_id: session?.id,
         id: messageId,
-        parent_id: parentId,
-        ...(parentMessage ? { parent_message: parentMessage } : {}),
+        parent_id: userMessage.id,
+        parent_message: parentMessage,
         background_tasks: {
           title_generation: true,
           tags_generation: true,
           follow_up_generation: true,
         },
-        // Legacy metadata for backward compatibility
+        // Existing metadata kept for backward compatibility
         metadata: {
           slm_enabled: slmEnabled,
           slm_decision: slmDecision,
@@ -856,14 +869,13 @@ export function useChatStore() {
 
       console.log('Completion API payload:', completionPayload);
       console.log('Completion API chat_id:', completionPayload.chat_id);
-      console.log('Completion API session_id:', completionPayload.session_id);
 
-      // --- STEP 1: Send the API request ---
+      // --- Send the API request with SSE streaming ---
       const res = await fetch(chatUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Accept: 'application/json',
+          Accept: 'text/event-stream',
           ...bearerHeader,
           ...apiKeyHeader,
         },
@@ -871,10 +883,9 @@ export function useChatStore() {
         body: JSON.stringify(completionPayload),
       });
 
-      const data = await res.json().catch(() => null);
-
       if (!res.ok) {
-        const detail = typeof (data as any)?.detail === 'string' ? (data as any).detail : null;
+        const errData = await res.json().catch(() => null);
+        const detail = typeof (errData as any)?.detail === 'string' ? (errData as any).detail : null;
         const errorMsg = detail || `Chat request failed (HTTP ${res.status})`;
 
         // Handle "model not found" or 400 errors by triggering a model selection dialog
@@ -897,29 +908,12 @@ export function useChatStore() {
         throw new Error(errorMsg);
       }
 
-      console.log('API ack received:', data);
-
-      // Check if the HTTP response itself contains a recommendation
-      const d: any = data as any;
-      const ackPayload = d?.data || d;
-      const isRecommendation = (
-        ackPayload?.type === 'model_recommendation' ||
-        ackPayload?.recommended_model ||
-        ackPayload?.recommendation ||
-        ackPayload?.is_recommendation
-      ) && !modelOverride;
-
-      if (isRecommendation) {
-        console.log('useChatStore: Model recommendation detected!');
-        return { isRecommendation: true, recommendation: ackPayload };
-      }
-
-      // --- STEP 2: Create placeholder assistant message & listen for socket events ---
+      // --- Create placeholder assistant message ---
       const assistantMsgId = generateId();
       const assistantMessage: Message = {
         id: assistantMsgId,
         role: 'assistant',
-        content: '',  // Will be filled by streaming chunks
+        content: '',
         timestamp: new Date(),
       };
 
@@ -937,228 +931,212 @@ export function useChatStore() {
         })
       );
 
-      // --- STEP 3: Listen for streaming events via Socket.IO ---
-      const sock = getSocket();
       const sessionRef = session!;
       const modelRef = modelToUse;
+      let streamedContent = '';
+      const receivedFiles: any[] = [];
 
-      const streamResult = await new Promise<{ isRecommendation: boolean; recommendation?: any }>((resolve) => {
-        let streamedContent = '';
-        let receivedFiles: any[] = [];
-        let streamTimeout: ReturnType<typeof setTimeout>;
+      const updateAssistantContent = (newContent: string) => {
+        setSessions((prev) =>
+          prev.map((s) => {
+            if (s.id === sessionRef.id) {
+              return {
+                ...s,
+                messages: s.messages.map((m) =>
+                  m.id === assistantMsgId ? { ...m, content: newContent } : m
+                ),
+                updatedAt: new Date(),
+              };
+            }
+            return s;
+          })
+        );
+      };
 
-        // Safety timeout: resolve after 120s if no completion event received
-        streamTimeout = setTimeout(() => {
-          console.warn('Stream timeout reached (120s), finalizing message.');
-          sock.off('chat:events', handleChatEvent);
-          finalizeMessage();
-          resolve({ isRecommendation: false });
-        }, 120000);
+      // --- Read SSE stream ---
+      const contentType = res.headers.get('content-type') || '';
+      const isSSE = contentType.includes('text/event-stream');
 
-        function updateAssistantContent(newContent: string) {
-          setSessions((prev) =>
-            prev.map((s) => {
-              if (s.id === sessionRef.id) {
-                return {
-                  ...s,
-                  messages: s.messages.map((m) =>
-                    m.id === assistantMsgId ? { ...m, content: newContent } : m
-                  ),
-                  updatedAt: new Date(),
-                };
+      if (isSSE && res.body) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() ?? '';
+
+            for (const line of lines) {
+              if (!line.startsWith('data: ')) continue;
+              const raw = line.slice(6).trim();
+              if (raw === '[DONE]') break;
+
+              try {
+                const parsed = JSON.parse(raw);
+
+                // Check for recommendation in SSE chunk
+                if ((parsed?.type === 'model_recommendation' || parsed?.is_recommendation) && !modelOverride) {
+                  console.log('SSE recommendation detected:', parsed);
+                  setSessions((prev) =>
+                    prev.map((s) =>
+                      s.id === sessionRef.id
+                        ? { ...s, messages: s.messages.filter(m => m.id !== assistantMsgId), updatedAt: new Date() }
+                        : s
+                    )
+                  );
+                  return { isRecommendation: true, recommendation: parsed };
+                }
+
+                // OpenAI-compatible delta
+                const delta = parsed?.choices?.[0]?.delta?.content;
+                if (typeof delta === 'string') {
+                  streamedContent += delta;
+                  updateAssistantContent(streamedContent);
+                }
+              } catch {
+                // ignore malformed SSE lines
               }
-              return s;
-            })
+            }
+          }
+        } finally {
+          reader.releaseLock();
+        }
+      } else {
+        // Non-streaming: parse JSON response directly
+        const data = await res.json().catch(() => null);
+        console.log('API response:', data);
+
+        // Check for recommendation
+        const d: any = data as any;
+        const ackPayload = d?.data || d;
+        const isRecommendation = (
+          ackPayload?.type === 'model_recommendation' ||
+          ackPayload?.recommended_model ||
+          ackPayload?.recommendation ||
+          ackPayload?.is_recommendation
+        ) && !modelOverride;
+
+        if (isRecommendation) {
+          console.log('Model recommendation detected!');
+          setSessions((prev) =>
+            prev.map((s) =>
+              s.id === sessionRef.id
+                ? { ...s, messages: s.messages.filter(m => m.id !== assistantMsgId), updatedAt: new Date() }
+                : s
+            )
           );
+          return { isRecommendation: true, recommendation: ackPayload };
         }
 
-        function finalizeMessage() {
-          // Update final content
-          const finalContent = streamedContent || 'No response';
-          updateAssistantContent(finalContent);
+        // Extract content from non-streaming response
+        const content =
+          d?.choices?.[0]?.message?.content ||
+          d?.message?.content ||
+          d?.content ||
+          d?.response ||
+          '';
+        streamedContent = typeof content === 'string' ? content : JSON.stringify(content);
+        updateAssistantContent(streamedContent || 'No response');
+      }
 
-          // Call /api/chat/completed to save the conversation
+      // Finalize: set content and save to backend
+      const finalContent = streamedContent || 'No response';
+      updateAssistantContent(finalContent);
+
+      // Fire-and-forget: save completed chat to backend
+      (async () => {
+        try {
           const finalAssistantMessage: Message = {
             id: assistantMsgId,
             role: 'assistant',
             content: finalContent,
             timestamp: new Date(),
           };
+          const updatedMessages = [...sessionRef.messages, finalAssistantMessage];
+          const formattedMessages = updatedMessages.map(msg => ({
+            id: msg.id,
+            role: msg.role,
+            content: msg.content,
+            timestamp: Math.floor(msg.timestamp.getTime() / 1000),
+          }));
 
-          // Fire-and-forget: save to backend
-          (async () => {
-            try {
-              const updatedMessages = [...sessionRef.messages, finalAssistantMessage];
-              const formattedMessages = updatedMessages.map(msg => ({
+          const completedPayload = {
+            model: modelRef,
+            messages: formattedMessages,
+            chat_id: sessionRef.id,
+            session_id: pseudoSessionId,
+            id: assistantMsgId,
+          };
+
+          console.log('Calling /api/chat/completed');
+          const completedResponse = await fetch(API_ENDPOINTS.chat.completed(), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify(completedPayload),
+          });
+
+          if (completedResponse.ok) {
+            const completedData = await completedResponse.json();
+            console.log('Chat saved successfully:', completedData);
+
+            const messagesObject: any = {};
+            const messagesArray: any[] = [];
+
+            updatedMessages.forEach((msg, index) => {
+              const parentId = index > 0 ? updatedMessages[index - 1].id : null;
+              const childrenIds = index < updatedMessages.length - 1 ? [updatedMessages[index + 1].id] : [];
+
+              const messageObj: any = {
                 id: msg.id,
+                parentId,
+                childrenIds,
                 role: msg.role,
                 content: msg.content,
                 timestamp: Math.floor(msg.timestamp.getTime() / 1000),
-              }));
-
-              const completedPayload = {
-                model: modelRef,
-                messages: formattedMessages,
-                chat_id: sessionRef.id,
-                session_id: currentSocketId,
-                id: assistantMsgId,
               };
 
-              console.log('Calling /api/chat/completed');
-              const completedResponse = await fetch(API_ENDPOINTS.chat.completed(), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify(completedPayload),
-              });
-
-              if (completedResponse.ok) {
-                const completedData = await completedResponse.json();
-                console.log('Chat saved successfully:', completedData);
-
-                // Update chat with history structure
-                const messagesObject: any = {};
-                const messagesArray: any[] = [];
-
-                updatedMessages.forEach((msg, index) => {
-                  const parentId = index > 0 ? updatedMessages[index - 1].id : null;
-                  const childrenIds = index < updatedMessages.length - 1 ? [updatedMessages[index + 1].id] : [];
-
-                  const messageObj: any = {
-                    id: msg.id,
-                    parentId,
-                    childrenIds,
-                    role: msg.role,
-                    content: msg.content,
-                    timestamp: Math.floor(msg.timestamp.getTime() / 1000),
-                  };
-
-                  if (msg.role === 'user') messageObj.models = [modelRef];
-                  if (msg.role === 'assistant') {
-                    messageObj.model = modelRef;
-                    messageObj.modelName = modelRef;
-                    messageObj.modelIdx = 0;
-                    messageObj.done = true;
-                  }
-
-                  messagesObject[msg.id] = messageObj;
-                  messagesArray.push(messageObj);
-                });
-
-                const chatUpdatePayload = {
-                  chat: {
-                    title: sessionRef.title,
-                    models: [modelRef],
-                    history: { messages: messagesObject, currentId: assistantMsgId },
-                    messages: messagesArray,
-                    params: {},
-                    files: receivedFiles,
-                  },
-                };
-
-                await fetch(API_ENDPOINTS.chat.rename(sessionRef.id), {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  credentials: 'include',
-                  body: JSON.stringify(chatUpdatePayload),
-                });
+              if (msg.role === 'user') messageObj.models = [modelRef];
+              if (msg.role === 'assistant') {
+                messageObj.model = modelRef;
+                messageObj.modelName = modelRef;
+                messageObj.modelIdx = 0;
+                messageObj.done = true;
               }
-            } catch (error) {
-              console.error('Error saving completed chat:', error);
-            }
-          })();
-        }
 
-        function handleChatEvent(event: any) {
-          if (!event || !event.data) return;
+              messagesObject[msg.id] = messageObj;
+              messagesArray.push(messageObj);
+            });
 
-          const type = event.data.type;
-          const eventData = event.data.data;
+            const chatUpdatePayload = {
+              chat: {
+                title: sessionRef.title,
+                models: [modelRef],
+                history: { messages: messagesObject, currentId: assistantMsgId },
+                messages: messagesArray,
+                params: {},
+                files: receivedFiles,
+              },
+            };
 
-          // 1. Text Streaming — append each chunk to the message
-          if (type === 'chat:message:delta') {
-            const chunk = eventData?.content || '';
-            streamedContent += chunk;
-            updateAssistantContent(streamedContent);
-          }
-
-          // 2. Completion — message is finished
-          if (type === 'chat:completion') {
-            console.log('Stream complete!');
-            clearTimeout(streamTimeout);
-            sock.off('chat:events', handleChatEvent);
-
-            // Check if catch-all completion event contains recommendation
-            if (eventData?.type === 'model_recommendation' || eventData?.is_recommendation) {
-              console.log('Completion event contained recommendation:', eventData);
-              // Remove the placeholder message
-              setSessions((prev) =>
-                prev.map((s) => {
-                  if (s.id === sessionRef.id) {
-                    return {
-                      ...s,
-                      messages: s.messages.filter(m => m.id !== assistantMsgId),
-                      updatedAt: new Date(),
-                    };
-                  }
-                  return s;
-                })
-              );
-              resolve({ isRecommendation: true, recommendation: eventData });
-              return;
-            }
-
-            finalizeMessage();
-            resolve({ isRecommendation: false });
-          }
-
-          // 3. Image files received
-          if (type === 'chat:message:files') {
-            const files = eventData?.files || [];
-            console.log('Images received:', files);
-            receivedFiles = files;
-            // Append image info to the message content
-            if (files.length > 0) {
-              const imageMarkdown = files
-                .map((f: any) => `![image](${f.url || f.path || ''})`)
-                .join('\n');
-              streamedContent += '\n' + imageMarkdown;
-              updateAssistantContent(streamedContent);
-            }
-          }
-
-          // 4. Model Recommendation received via socket
-          if (type === 'model_recommendation' || type === 'recommendation') {
-            console.log('Socket received model recommendation:', eventData);
-            clearTimeout(streamTimeout);
-            sock.off('chat:events', handleChatEvent);
-
-            // Remove the placeholder message since we're showing a popup instead
-            setSessions((prev) =>
-              prev.map((s) => {
-                if (s.id === sessionRef.id) {
-                  return {
-                    ...s,
-                    messages: s.messages.filter(m => m.id !== assistantMsgId),
-                    updatedAt: new Date(),
-                  };
-                }
-                return s;
-              })
-            );
-
-            resolve({
-              isRecommendation: true,
-              recommendation: eventData
+            await fetch(API_ENDPOINTS.chat.rename(sessionRef.id), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify(chatUpdatePayload),
             });
           }
+        } catch (error) {
+          console.error('Error saving completed chat:', error);
         }
+      })();
 
-        // Start listening
-        sock.on('chat:events', handleChatEvent);
-      });
-
-      return streamResult;
+      return { isRecommendation: false };
     } catch (e: any) {
       const assistantMessage: Message = {
         id: generateId(),
